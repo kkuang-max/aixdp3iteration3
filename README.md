@@ -40,9 +40,8 @@ starts over. Staff can press `r` to start fresh straight away.
 
 **How it works and Specs are interactive both ways.** Pointing at a row (a hand, the mouse, or a tap) lights it and its
 part on the model; pointing at a part of the model lights that part and every row about it (e.g. the chip board lights
-Bluetooth and Works with). In swipe mode, swiping up or down steps through the rows one at a time; past the
-last (or first) row it moves on to the next (or previous) topic, and left / right still change topics. With an
-uploaded model, each row is matched to the model part with the closest name.
+Bluetooth and Works with). In swipe mode, swiping up or down steps through the rows one at a time (stopping at the first
+and last). With an uploaded model, each row is matched to the model part with the closest name.
 
 ## Hand interaction
 
@@ -52,8 +51,9 @@ Two hand modes, switched with **C + S** (see the shortcuts below):
   opens it after 0.9 s (the ring around the topic number fills); holding over a button presses it after 1.2 s (a bar
   fills under it, and the pointer's ring fills too). The mouse opens topics by resting on them as well, and clicks
   everything else. Touch taps.
-- **Swipe (switch on):** no pointer. Swipe left (or down) for the next topic, right (or up) for the previous one, like
-  turning pages. On the team and brochure screens, swipe right to go back to exploring.
+- **Swipe (switch on):** swipes only work on How it works and Specs, where up and down step through the rows. They
+  never change topics or screens: the pointer stays on, and visitors pick topics and buttons by holding over them as in
+  point-and-hold mode (it just doesn't hover rows there, since swipes pick them).
 
 If the hand stays near an edge of the camera view, the kiosk says so ("Raise your hand a little…"), because the camera
 loses hands near the edges.

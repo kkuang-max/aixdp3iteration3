@@ -202,26 +202,19 @@ export default function Kiosk() {
   const onSwipe = useCallback(
     (dir: SwipeDir) => {
       markPresent(performance.now());
-      if (ix.current.screen !== "hub") {
-        if (dir === "right") go("hub");
-        return;
-      }
+      // Swipes only step through the rows of How it works and Specs (each lights its part). They never change topics
+      // or screens: visitors pick those by holding a hand over them.
       const s = ix.current;
       const tp = TOPICS[s.topic];
-      // How it works / Specs: up and down step through the rows (each lights its part); past the ends, the topic changes.
-      if (PART_TOPICS.has(tp.id) && (dir === "up" || dir === "down")) {
-        const rows = demoRef.current?.sections.find((x) => x.id === tp.id)?.rows.length ?? tp.rows.length;
-        const next = dir === "down" ? (s.activeRow === null ? 0 : s.activeRow + 1) : s.activeRow === null ? -1 : s.activeRow - 1;
-        if (next >= 0 && next < rows) {
-          s.activeRow = next;
-          s.rowFromHover = false;
-          setActiveRow(next);
-          return;
-        }
-      }
-      pickTopic(s.topic + (dir === "left" || dir === "down" ? 1 : -1));
+      if (s.screen !== "hub" || !PART_TOPICS.has(tp.id) || (dir !== "up" && dir !== "down")) return;
+      const rows = demoRef.current?.sections.find((x) => x.id === tp.id)?.rows.length ?? tp.rows.length;
+      const next = dir === "down" ? (s.activeRow === null ? 0 : s.activeRow + 1) : s.activeRow === null ? rows - 1 : s.activeRow - 1;
+      const row = Math.min(Math.max(next, 0), rows - 1);
+      s.activeRow = row;
+      s.rowFromHover = false;
+      setActiveRow(row);
     },
-    [go, pickTopic, markPresent],
+    [markPresent],
   );
 
   // ---- Pointing: whatever the hand (or mouse) is over ------------------------
@@ -247,6 +240,9 @@ export default function Kiosk() {
     const cursor = cursorRef.current;
     cursor?.toggleAttribute("data-over", !!target);
     cursor?.toggleAttribute("data-dwelling", !!target && !s.dwellFired);
+
+    // In swipe mode a hand picks rows by swiping, so its pointer doesn't also hover them.
+    if (source === "hand" && swipeModeRef.current) return;
 
     // A part of the model under the pointer (sample earbud slices, or the uploaded model's 3D view).
     let part: string | null = hit?.closest("[data-model-part]")?.getAttribute("data-model-part") ?? null;
@@ -301,7 +297,8 @@ export default function Kiosk() {
       // While teaching, frames go to the teach screen instead.
       const teach = teachSink.current;
       if (teach) teach(now, hand ? hand.palmX * hand.aspect : null, hand ? hand.palmY : null);
-      const swiping = swipeModeRef.current;
+      // Swipes are only read on How it works / Specs; everywhere else the hand just points.
+      const swiping = swipeModeRef.current && s.screen === "hub" && PART_TOPICS.has(TOPICS[s.topic].id);
 
       if (!hand) {
         const swipe = teach || !swiping ? null : swipes.current?.lost(now);
@@ -353,7 +350,7 @@ export default function Kiosk() {
       s.y += (ty - s.y) * (1 - SMOOTHING);
       markPresent(now);
 
-      if (swiping || teach) return;
+      if (teach) return;
       if (cursor) {
         cursor.style.opacity = "1";
         cursor.style.transform = `translate(${s.x}px, ${s.y}px)`;
@@ -524,7 +521,7 @@ export default function Kiosk() {
     : !camOk
       ? { title: "TOUCH OR HOVER OVER A TOPIC", sub: "Pick in any order" }
       : swipeMode
-        ? { title: handVisible ? "SWIPE LEFT FOR THE NEXT TOPIC" : "RAISE A HAND, THEN SWIPE", sub: "Swipe right to go back a topic" }
+        ? { title: "HOLD YOUR HAND OVER A TOPIC", sub: "On How it works and Specs, swipe up or down through the parts" }
         : { title: "HOLD YOUR HAND OVER A TOPIC", sub: "It opens after a second · pick in any order" };
 
   // On How it works / Specs, tell visitors the rows respond.
@@ -534,7 +531,7 @@ export default function Kiosk() {
     : !camOk
       ? { title: "TOUCH OR HOVER OVER A PART", sub: "On the model or in the list: the other lights up too" }
       : swipeMode
-        ? { title: handVisible ? "SWIPE UP OR DOWN THROUGH THE PARTS" : "RAISE A HAND, THEN SWIPE", sub: "Swipe left or right for another topic" }
+        ? { title: handVisible ? "SWIPE UP OR DOWN THROUGH THE PARTS" : "RAISE A HAND, THEN SWIPE", sub: "Hold your hand over a topic to switch" }
         : { title: "POINT AT A PART OR A ROW", sub: "The matching part and details light up" };
 
   const s = view;
@@ -629,7 +626,7 @@ export default function Kiosk() {
 
       {/* Hand pointer (pointing mode). Outside the scaled stage so it maps 1:1 to the screen.
           Its ring fills while the hand holds over something that can be pressed. */}
-      {!swipeMode && camOk && (
+      {camOk && (
         <>
           <svg className={styles.trail} aria-hidden="true">
             <polyline ref={trailRef} fill="none" stroke={ACCENT} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
