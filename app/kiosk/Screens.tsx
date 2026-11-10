@@ -1,9 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { MODEL, PRODUCT, TOPICS, type PartId } from "@/lib/product";
+import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
-import type { PublishedDemo } from "@/lib/published";
+import { matchPart, type PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
 import LiveModel from "./LiveModel";
 import styles from "./kiosk.module.css";
@@ -61,19 +61,21 @@ export const ModelFileContext = createContext<{ name: string; data: ArrayBuffer 
 const useProductName = () => useContext(DemoContext)?.productName.toUpperCase() || PRODUCT.name;
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
   if (demo?.model) {
     const mapping = demo.mappings.find((m) => m.sectionId === props.topicId);
-    const part = mapping?.part;
+    // A row the visitor points at / swiped to wins over the topic's mapped part.
+    const part = props.rowPart ?? mapping?.part;
+    const mode = props.rowPart ? (props.topicId === "how" ? "Explode apart" : "Highlight") : (mapping?.mode ?? "Highlight");
     if (file && failed !== file.data) {
       return (
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mapping?.mode ?? "Highlight"} accent={props.accent} onFail={() => setFailed(file.data)} />
+            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} />
           </div>
         </>
       );
@@ -103,10 +105,14 @@ function HandButton(props: { className: string; onClick: () => void; children: R
 }
 
 // ---- Topic hub ---------------------------------------------------------------
+// One stable array per part, so the 3D earbud only rebuilds when the lit part changes.
+const ONE_PART = Object.fromEntries(MODEL.parts.map((p) => [p.id, [p.id]])) as Record<PartId, PartId[]>;
+
 export function Hub(props: {
   topic: number;
   onPick: (i: number) => void;
-  hoverPart: PartId | null;
+  activeRow: number | null;
+  onRow: (i: number) => void;
   explode: number;
   accent: string;
   guide: { title: string; sub: string; tip: boolean };
@@ -120,8 +126,13 @@ export function Hub(props: {
   const base = TOPICS[props.topic];
   const published = demo?.sections.find((x) => x.id === base.id);
   const t = published ? { ...base, title: published.title, rows: published.rows.map((r) => ({ a: r.a, b: r.b, part: undefined as PartId | undefined })) } : base;
-  const { hoverPart } = props;
-  const highlight = useMemo(() => (hoverPart ? [hoverPart] : base.highlight), [hoverPart, base]);
+  const interactive = PART_TOPICS.has(base.id);
+  const active = interactive && props.activeRow !== null ? t.rows[props.activeRow] : undefined;
+  // Sample earbud: the row's part. Uploaded model: the part whose name matches the row.
+  const partNames = demo?.model ? (demo.model.partNames ?? Object.keys(demo.model.parts)) : [];
+  const rowPart = (r: { a: string }) => (demo?.model ? matchPart(r.a, partNames) : null);
+  const activePart = active?.part ?? null;
+  const highlight = activePart ? ONE_PART[activePart] : base.highlight;
   return (
     <>
       <div className={styles.eyebrow}>
@@ -160,7 +171,7 @@ export function Hub(props: {
         })}
       </nav>
 
-      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} />
+      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={active ? rowPart(active) : null} />
 
       <section key={t.id} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>
@@ -168,12 +179,13 @@ export function Hub(props: {
         </span>
         <h1 className={styles.panelTitle}>{t.title}</h1>
         <div className={styles.rows}>
-          {t.rows.map((r) => (
+          {t.rows.map((r, i) => (
             <div
-              key={r.a}
+              key={`${i}-${r.a}`}
               className={styles.row}
-              data-part={r.part}
-              style={r.part && r.part === props.hoverPart ? { color: props.accent } : undefined}
+              data-row={interactive ? i : undefined}
+              data-active={interactive && i === props.activeRow ? "" : undefined}
+              onClick={interactive ? () => props.onRow(i) : undefined}
             >
               <span className={styles.rowA}>{r.a}</span>
               {r.b && <span className={styles.rowB}>{r.b}</span>}

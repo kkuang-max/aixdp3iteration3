@@ -38,6 +38,11 @@ the prototype; a real booth would send them to its CRM.
 with nobody around (3 min on the "team member is coming" screen), the visitor's session is cleared and the kiosk
 starts over. Staff can press `r` to start fresh straight away.
 
+**How it works and Specs rows are interactive.** Hovering (a pointing hand, the mouse, or a tap) over a row lights it
+up and lights its part on the model. In swipe mode, swiping up or down steps through the rows one at a time; past the
+last (or first) row it moves on to the next (or previous) topic, and left / right still change topics. With an
+uploaded model, each row is matched to the model part with the closest name.
+
 ## Hand interaction
 
 Two hand modes, switched with **C + S** (see the shortcuts below):

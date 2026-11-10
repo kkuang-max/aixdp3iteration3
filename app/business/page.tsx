@@ -418,10 +418,10 @@ export default function BusinessPage() {
     try {
       let pictures: PublishedDemo["model"];
       if (model) {
-        const used = new Set(config.mappings.map((m) => m.part));
+        // Pictures of every part (the kiosk lights up whichever part a visitor points at).
         const parts: Record<string, string> = {};
-        for (const p of model.parts) if (used.has(p.name)) parts[p.name] = await shrinkImage(p.context);
-        pictures = { fileName: model.fileName, whole: await shrinkImage(model.whole), parts };
+        for (const p of model.parts) parts[p.name] = await shrinkImage(p.context, 400);
+        pictures = { fileName: model.fileName, whole: await shrinkImage(model.whole), parts, partNames: model.parts.map((p) => p.name) };
         const stored = await loadFile("model");
         if (stored) {
           const { path } = await publishModelFile(stored);

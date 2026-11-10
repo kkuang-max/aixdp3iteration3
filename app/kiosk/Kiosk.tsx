@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TOPICS, type PartId } from "@/lib/product";
+import { PART_TOPICS, TOPICS } from "@/lib/product";
 import { newSession, saveLead, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
@@ -46,7 +46,8 @@ export default function Kiosk() {
   const [screen, setScreen] = useState<Screen>("hub");
   const [topic, setTopic] = useState(DEFAULT_TOPIC);
   const [present, setPresent] = useState(false); // someone is using the kiosk (else attract loop)
-  const [hoverPart, setHoverPart] = useState<PartId | null>(null); // a "how it works" row under the pointer
+  // On "How it works" and "Specs": the row a visitor is pointing at or swiped to (its part lights up).
+  const [activeRow, setActiveRow] = useState<number | null>(null);
   const [explode, setExplode] = useState(TOPICS[DEFAULT_TOPIC].explode);
   // The session lives in a ref (time per topic grows every frame); screens get a snapshot of it.
   const [view, setView] = useState<Session>(newSession);
@@ -61,6 +62,10 @@ export default function Kiosk() {
   const [edge, setEdge] = useState<Edge | null>(null);
   const [camAspect, setCamAspect] = useState(16 / 9);
   const [demo, setDemo] = useState<PublishedDemo | null>(null); // what the business portal published
+  const demoRef = useRef<PublishedDemo | null>(null);
+  useEffect(() => {
+    demoRef.current = demo;
+  }, [demo]);
   const [modelFile, setModelFile] = useState<{ key: string; name: string; data: ArrayBuffer } | null>(null);
 
   // Show what the business portal published; check for a newer version every minute.
@@ -112,7 +117,8 @@ export default function Kiosk() {
     dwellSince: 0,
     dwellHit: 0,
     dwellFired: false,
-    hoverPart: null as PartId | null,
+    activeRow: null as number | null,
+    rowFromHover: false,
     edge: null as Edge | null,
     edgeSince: 0,
   });
@@ -134,10 +140,13 @@ export default function Kiosk() {
     (i: number, byVisitor = true) => {
       const n = TOPICS.length;
       i = ((i % n) + n) % n;
+      if (i !== ix.current.topic) {
+        // A new topic starts with no row picked (re-picking the same topic keeps it).
+        setActiveRow(null);
+        ix.current.activeRow = null;
+      }
       ix.current.topic = i;
       setTopic(i);
-      setHoverPart(null);
-      ix.current.hoverPart = null;
       if (byVisitor) {
         const picked = session.current.picked;
         if (!picked.includes(TOPICS[i].id)) picked.push(TOPICS[i].id);
@@ -152,7 +161,8 @@ export default function Kiosk() {
       ix.current.screen = to;
       if (to === "staff" && !session.current.staffAsked) session.current.staffAsked = Date.now();
       clearDwell(ix.current);
-      setHoverPart(null);
+      ix.current.activeRow = null;
+      setActiveRow(null);
       setScreen(to);
       bump();
     },
@@ -193,7 +203,20 @@ export default function Kiosk() {
         if (dir === "right") go("hub");
         return;
       }
-      pickTopic(ix.current.topic + (dir === "left" || dir === "down" ? 1 : -1));
+      const s = ix.current;
+      const tp = TOPICS[s.topic];
+      // How it works / Specs: up and down step through the rows (each lights its part); past the ends, the topic changes.
+      if (PART_TOPICS.has(tp.id) && (dir === "up" || dir === "down")) {
+        const rows = demoRef.current?.sections.find((x) => x.id === tp.id)?.rows.length ?? tp.rows.length;
+        const next = dir === "down" ? (s.activeRow === null ? 0 : s.activeRow + 1) : s.activeRow === null ? -1 : s.activeRow - 1;
+        if (next >= 0 && next < rows) {
+          s.activeRow = next;
+          s.rowFromHover = false;
+          setActiveRow(next);
+          return;
+        }
+      }
+      pickTopic(s.topic + (dir === "left" || dir === "down" ? 1 : -1));
     },
     [go, pickTopic, markPresent],
   );
@@ -222,10 +245,12 @@ export default function Kiosk() {
     cursor?.toggleAttribute("data-over", !!target);
     cursor?.toggleAttribute("data-dwelling", !!target && !s.dwellFired);
 
-    const part = (hit?.closest("[data-part]")?.getAttribute("data-part") as PartId | null) ?? null;
-    if (part !== s.hoverPart) {
-      s.hoverPart = part;
-      setHoverPart(part);
+    const rowEl = hit?.closest("[data-row]");
+    const row = rowEl ? Number(rowEl.getAttribute("data-row")) : null;
+    if (row !== null ? row !== s.activeRow : s.rowFromHover && s.activeRow !== null) {
+      s.activeRow = row;
+      s.rowFromHover = row !== null;
+      setActiveRow(row);
     }
   }, []);
 
@@ -234,9 +259,9 @@ export default function Kiosk() {
     clearDwell(s);
     cursorRef.current?.removeAttribute("data-over");
     cursorRef.current?.removeAttribute("data-dwelling");
-    if (s.hoverPart) {
-      s.hoverPart = null;
-      setHoverPart(null);
+    if (s.rowFromHover && s.activeRow !== null) {
+      s.activeRow = null;
+      setActiveRow(null);
     }
   }, []);
 
@@ -482,6 +507,16 @@ export default function Kiosk() {
         ? { title: handVisible ? "SWIPE LEFT FOR THE NEXT TOPIC" : "RAISE A HAND, THEN SWIPE", sub: "Swipe right to go back a topic" }
         : { title: "HOLD YOUR HAND OVER A TOPIC", sub: "It opens after a second · pick in any order" };
 
+  // On How it works / Specs, tell visitors the rows respond.
+  const partTopic = present && PART_TOPICS.has(TOPICS[topic].id);
+  const rowGuide = !partTopic
+    ? guide
+    : !camOk
+      ? { title: "TOUCH OR HOVER OVER A ROW", sub: "It lights up that part on the model" }
+      : swipeMode
+        ? { title: handVisible ? "SWIPE UP OR DOWN THROUGH THE PARTS" : "RAISE A HAND, THEN SWIPE", sub: "Swipe left or right for another topic" }
+        : { title: "HOLD YOUR HAND OVER A ROW", sub: "It lights up that part · or pick another topic" };
+
   const s = view;
   return (
     <DemoContext.Provider value={demo}>
@@ -494,10 +529,11 @@ export default function Kiosk() {
           <Hub
             topic={topic}
             onPick={(i) => pickTopic(i)}
-            hoverPart={hoverPart}
+            activeRow={activeRow}
+            onRow={(i) => { ix.current.activeRow = i; ix.current.rowFromHover = false; setActiveRow(i); }}
             explode={explode}
             accent={ACCENT}
-            guide={{ ...guide, sub: tip ?? guide.sub, tip: !!tip }}
+            guide={{ ...rowGuide, sub: tip ?? rowGuide.sub, tip: !!tip }}
             attract={!present}
             onTeam={() => go("staff")}
             onBrochure={() => go("brochure")}

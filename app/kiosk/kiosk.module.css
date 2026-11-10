@@ -1062,3 +1062,36 @@ video.camVideo {
 .liveModel[data-ready] {
   opacity: 1;
 }
+
+/* How it works / Specs: rows respond to hover, swipes and taps. */
+.row[data-row] {
+  position: relative;
+  cursor: pointer;
+  transition: color 150ms ease, padding-left 200ms ease;
+}
+
+.row[data-row]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: #bfd8ff;
+  transform: scaleY(0);
+  transition: transform 200ms ease;
+}
+
+.row[data-active] {
+  padding-left: 14px;
+  color: #bfd8ff;
+}
+
+.row[data-active]::before {
+  transform: scaleY(1);
+}
+
+.row[data-active] .rowB {
+  color: #d6dae6;
+}

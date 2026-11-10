@@ -17,6 +17,8 @@ export type PublishedDemo = {
     fileName: string;
     whole: string;
     parts: Record<string, string>;
+    /** Every part name in the model (pictures may cover only some). */
+    partNames?: string[];
     /** The model file for the kiosk's live 3D view. `path` is set when it was uploaded online. */
     file?: { name: string; path?: string };
   };
@@ -155,4 +157,26 @@ export async function loadPublishedModelFile(demo: PublishedDemo): Promise<{ nam
   }
   const local = await loadFile("publishedModel");
   return local && local.name === file.name ? { name: local.name, data: local.data } : null;
+}
+
+/** Which model part a row is about: matches the row's name against the model's part names. */
+export function matchPart(rowName: string, partNames: string[]): string | null {
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const row = norm(rowName);
+  if (!row) return null;
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const name of partNames) {
+    const n = norm(name);
+    if (!n) continue;
+    let score = 0;
+    if (n === row) score = 100;
+    else if (row.includes(n) || n.includes(row)) score = 50 + Math.min(n.length, row.length);
+    else {
+      const words = new Set(row.split(" ").filter((w) => w.length >= 3));
+      for (const w of n.split(" ")) if (words.has(w) || (w.length >= 4 && [...words].some((x) => x.startsWith(w) || w.startsWith(x)))) score += 10;
+    }
+    if (score > bestScore) { best = name; bestScore = score; }
+  }
+  return bestScore > 0 ? best : null;
 }
