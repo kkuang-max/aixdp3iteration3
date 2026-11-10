@@ -1339,3 +1339,84 @@
 .gestureCard .gestureRows {
   gap: 8px;
 }
+
+/* ---- Uploaded 3D model + AI build ---- */
+.slideImg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.modelThumb {
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+}
+
+.replaceRow {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.replaceRow .textLink {
+  font-size: 14px;
+}
+
+.chipsScroll {
+  max-height: 84px;
+  overflow-y: auto;
+}
+
+.aiError {
+  color: #f2c27a;
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(200, 216, 255, 0.2);
+  border-top-color: #c8d8ff;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.busy {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 300px;
+  text-align: center;
+  background: rgba(13, 17, 28, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.busy b {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.busy span:last-child {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #c9cfdd;
+}

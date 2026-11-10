@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MODEL, TOPICS, type PartId } from "@/lib/product";
+import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
+import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -11,7 +13,17 @@ import styles from "./business.module.css";
 // scaled to fit the window, so it looks the same on any screen size or resolution.
 
 type Row = { a: string; b: string };
-type Section = { id: string; label: string; title: string; rows: Row[] };
+type Section = {
+  id: string;
+  label: string;
+  title: string;
+  rows: Row[];
+  // Filled in when the AI builds the section from the product doc:
+  source?: string; // where in the doc, e.g. "p. 3"
+  quote?: string; // supporting excerpt
+  needsReview?: boolean;
+  reviewNote?: string;
+};
 type Mapping = { gesture: string; sectionId: string; part: string; mode: string };
 type Mode = "auto" | "manual";
 type BusinessConfig = {
@@ -22,6 +34,7 @@ type BusinessConfig = {
   mappings: Mapping[];
   notes: Record<string, string>; // manual: what was pasted per section
   sectionFiles: Record<string, string>; // manual: pdf chosen per section
+  aiBuilt?: boolean; // sections were drafted by the AI from the product doc
 };
 type Screen =
   | { name: "a-upload" }
@@ -158,6 +171,32 @@ export default function BusinessPage() {
   const [editingPreview, setEditingPreview] = useState(false);
   const [notice, setNotice] = useState("");
   const [scale, setScale] = useState(1);
+  const [model, setModel] = useState<LoadedModel | null>(null); // the uploaded 3D model, split into parts
+  const [modelBusy, setModelBusy] = useState(false);
+  const [docFile, setDocFile] = useState<File | null>(null); // the product doc, kept for the AI
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  // Uploaded files live in this browser (IndexedDB): bring them back after a refresh.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const doc = await loadFile("doc");
+      if (doc && !cancelled) setDocFile(new File([doc.data], doc.name, { type: doc.type }));
+      const stored = await loadFile("model");
+      if (!stored || cancelled) return;
+      setModelBusy(true);
+      try {
+        const loaded = await buildModelParts(stored.name, stored.data);
+        if (!cancelled) setModel(loaded);
+      } catch {
+        /* the stored model can't be read any more: fall back to the sample */
+      } finally {
+        if (!cancelled) setModelBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     try {
@@ -196,8 +235,86 @@ export default function BusinessPage() {
     if (!allowed.test(file.name)) { setNotice("Unsupported file type. Choose one of the listed formats."); return; }
     apply(file.name); // only the file name is kept: files are not uploaded or analysed in this prototype
   };
-  const DOC = /\.(pdf|docx?)$/i;
-  const MODEL_FILE = /\.(fbx|obj|stl|step|stp|gltf|glb)$/i;
+  const DOC = /\.(pdf|txt|md)$/i;
+  const DOC_ACCEPT = ".pdf,.txt,.md";
+
+  // Product doc: kept in the browser and sent to the AI when the exhibitor builds the demo.
+  const onDocFile = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    if (/\.docx?$/i.test(file.name)) { setNotice("Word files: save as PDF first, then upload the PDF."); return; }
+    if (!DOC.test(file.name)) { setNotice("Use a PDF, or a .txt / .md file."); return; }
+    if (file.size > 4 * 1024 * 1024) { setNotice("That file is over 4 MB. Try a smaller PDF."); return; }
+    setDocFile(file);
+    setAiError("");
+    save({ ...config, documentName: file.name });
+    try { await saveFile("doc", { name: file.name, type: file.type, data: await file.arrayBuffer() }); } catch { /* kept until refresh */ }
+  };
+
+  // 3D model: read in the browser, split into parts, and each gesture re-pointed at the new parts.
+  const onModelFile = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    if (STEP_EXT.test(file.name)) { setNotice("STEP files can't be read in the browser yet: export as GLB or OBJ and upload that."); return; }
+    if (!MODEL_EXT.test(file.name)) { setNotice("Use a GLB, GLTF, OBJ, FBX or STL file."); return; }
+    setModelBusy(true);
+    try {
+      const data = await file.arrayBuffer();
+      const loaded = await buildModelParts(file.name, data);
+      setModel(loaded);
+      setPartIndex(0);
+      const names = loaded.parts.map((p) => p.name);
+      let k = 0;
+      const mappings = config.mappings.map((m) =>
+        m.part === "Whole product" || m.part === "None" || names.includes(m.part) ? m : { ...m, part: names[k++ % names.length] },
+      );
+      save({ ...config, modelName: file.name, mappings });
+      setNotice(`Found ${names.length} part${names.length === 1 ? "" : "s"} in ${file.name}${loaded.truncated ? " (showing the 24 largest)" : ""}.`);
+      try { await saveFile("model", { name: file.name, type: file.type, data }); } catch { /* kept until refresh */ }
+    } catch (e) {
+      setNotice(e instanceof Error && e.message ? `Couldn't read that model: ${e.message}` : "Couldn't read that model.");
+    } finally {
+      setModelBusy(false);
+    }
+  };
+  const useSampleModel = async () => {
+    setModel(null);
+    setPartIndex(0);
+    save({ ...config, modelName: "" });
+    await deleteFile("model");
+  };
+
+  // Ask the AI (server route) to draft the sections and gestures from the product doc.
+  const buildWithAI = async () => {
+    if (!docFile) {
+      save({ ...config, aiBuilt: false });
+      setNotice("No product doc uploaded, so this is the sample content.");
+      go({ name: "a-review" });
+      return;
+    }
+    setAiBusy(true);
+    setAiError("");
+    const form = new FormData();
+    form.append("document", docFile);
+    form.append("productName", config.productName);
+    form.append("parts", JSON.stringify(model?.parts.map((p) => p.name) ?? []));
+    try {
+      const res = await fetch("/api/build-demo", { method: "POST", body: form });
+      const json = await res.json().catch(() => ({ error: `The AI request failed (${res.status}).` }));
+      if (!res.ok) { setAiError(json.error ?? `The AI request failed (${res.status}).`); return; }
+      const sections = config.sections.map((s) => {
+        const ai = (json.sections as (Partial<Section> & { id: string })[]).find((x) => x.id === s.id);
+        return ai ? { ...s, title: ai.title ?? s.title, rows: ai.rows ?? s.rows, source: ai.source, quote: ai.quote, needsReview: ai.needsReview, reviewNote: ai.reviewNote } : s;
+      });
+      save({ ...config, productName: json.productName || config.productName, sections, mappings: json.mappings?.length ? json.mappings : config.mappings, aiBuilt: true });
+      setNotice(`Built from ${docFile.name}. Check anything marked “Needs a look”.`);
+      go({ name: "a-review" });
+    } catch {
+      setAiError("Couldn't reach the AI. Check the connection and try again.");
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -227,7 +344,7 @@ export default function BusinessPage() {
   const backFromGestures = () => go(mode === "auto" ? { name: "a-review" } : { name: "m-section", index: 4 });
 
   const uploadedList = (extra: string[]) => {
-    const files = [config.modelName || "orbit_earbuds.obj", ...extra];
+    const files = [model?.fileName || "orbit_earbuds.obj (sample)", ...extra];
     return (
       <div className={styles.uploaded}>
         <div className={styles.uploadedHead}>UPLOADED</div>
@@ -253,33 +370,54 @@ export default function BusinessPage() {
               <div className={styles.dropDone}>
                 <span className={styles.bigCheck}><Check size={26} /></span>
                 <span className={styles.fileName}>{config.documentName}</span>
-                <FileButton accept=".pdf,.doc,.docx" className={styles.replace} onFile={(f) => pickFile(f, DOC, (n) => save({ ...config, documentName: n }))}>Replace</FileButton>
+                {!docFile && <span className={styles.mutedSmall}>Upload it again to use it with the AI</span>}
+                <FileButton accept={DOC_ACCEPT} className={styles.replace} onFile={onDocFile}>Replace</FileButton>
               </div>
             ) : (
-              <FileButton accept=".pdf,.doc,.docx" className={styles.drop} onFile={(f) => pickFile(f, DOC, (n) => save({ ...config, documentName: n }))}>
-                <UploadIcon w={56} h={70} sw={1.5} /><b>UPLOAD</b><span>pdf, doc or docx</span>
+              <FileButton accept={DOC_ACCEPT} className={styles.drop} onFile={onDocFile}>
+                <UploadIcon w={56} h={70} sw={1.5} /><b>UPLOAD</b><span>pdf, txt or md</span>
               </FileButton>
             )}
-            <p className={styles.cardFoot}>PRD, one-pager or spec sheet · pdf, docx</p>
+            <p className={styles.cardFoot}>PRD, one-pager or spec sheet · pdf (up to 4 MB), txt, md</p>
           </div>
           <div className={styles.card}>
             <h2 className={styles.cardTitle}>2 · 3D MODEL</h2>
-            {config.modelName ? (
+            {modelBusy ? (
+              <div className={styles.dropDone}><span className={styles.spinner} /><span className={styles.mutedSmall}>Finding the parts…</span></div>
+            ) : model ? (
               <div className={styles.dropDone}>
-                <span className={styles.bigCheck}><Check size={26} /></span>
-                <span className={styles.fileName}>{config.modelName}</span>
-                <FileButton accept=".fbx,.obj,.stl,.step,.stp,.gltf,.glb" className={styles.replace} onFile={(f) => pickFile(f, MODEL_FILE, (n) => save({ ...config, modelName: n }))}>Replace</FileButton>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className={styles.modelThumb} src={model.whole} alt="" />
+                <span className={styles.fileName}>{model.fileName}</span>
+                <span className={styles.mutedSmall}>{model.parts.length} part{model.parts.length === 1 ? "" : "s"} found</span>
+                <span className={styles.replaceRow}>
+                  <FileButton accept={MODEL_ACCEPT} className={styles.replace} onFile={onModelFile}>Replace</FileButton>
+                  <button type="button" className={styles.textLink} onClick={useSampleModel}>Use sample</button>
+                </span>
               </div>
             ) : (
-              <FileButton accept=".fbx,.obj,.stl,.step,.stp,.gltf,.glb" className={styles.drop} onFile={(f) => pickFile(f, MODEL_FILE, (n) => save({ ...config, modelName: n }))}>
-                <UploadIcon w={56} h={70} sw={1.5} /><b>UPLOAD</b><span>fbx, obj, stl, step, or gltf/glb</span>
+              <FileButton accept={MODEL_ACCEPT} className={styles.drop} onFile={onModelFile}>
+                <UploadIcon w={56} h={70} sw={1.5} /><b>UPLOAD</b><span>glb, gltf, obj, fbx or stl</span>
               </FileButton>
             )}
-            <p className={styles.cardFoot}>AI finds the parts and links them to your text</p>
+            <p className={styles.cardFoot}>The model’s own pieces become the parts you map gestures to</p>
           </div>
         </div>
-        <p className={styles.manualHint}>Rather write it yourself? <button type="button" className={styles.textLink} onClick={() => switchMode("manual")}>Use manual setup</button></p>
-        <button type="button" className={styles.primaryBtn} onClick={() => go({ name: "a-review" })}>BUILD MY DEMO <Arrow /></button>
+        {aiError ? (
+          <p className={`${styles.manualHint} ${styles.aiError}`} role="alert">
+            {aiError} <button type="button" className={styles.textLink} onClick={() => { setAiError(""); save({ ...config, aiBuilt: false }); go({ name: "a-review" }); }}>Continue with sample content</button>
+          </p>
+        ) : (
+          <p className={styles.manualHint}>Rather write it yourself? <button type="button" className={styles.textLink} onClick={() => switchMode("manual")}>Use manual setup</button></p>
+        )}
+        <button type="button" className={styles.primaryBtn} onClick={buildWithAI} disabled={aiBusy || modelBusy}>BUILD MY DEMO <Arrow /></button>
+        {aiBusy && (
+          <div className={styles.busy} role="status">
+            <span className={styles.spinner} />
+            <b>Reading {docFile?.name}…</b>
+            <span>The AI is writing your sections and matching gestures to {model ? `your ${model.parts.length} parts` : "the parts"}. This can take a minute.</span>
+          </div>
+        )}
       </>
     );
   }
@@ -289,8 +427,8 @@ export default function BusinessPage() {
       ...config.sections.map((s) => ({
         key: s.id, label: s.label.toUpperCase(), title: s.title,
         body: s.rows.map((r) => r.a).join(" · "),
-        source: `From ${AUTO_META[s.id]?.source ?? "PRD"}`,
-        look: s.rows.length < 3 || s.rows.some((r) => !r.a.trim()),
+        source: `From ${s.source ?? AUTO_META[s.id]?.source ?? "PRD"}`,
+        look: !!s.needsReview || s.rows.length < 3 || s.rows.some((r) => !r.a.trim()),
         onEdit: () => go({ name: "a-edit", id: s.id }),
       })),
       {
@@ -302,7 +440,7 @@ export default function BusinessPage() {
     const needLook = cards.filter((c) => c.look).length;
     body = (
       <>
-        <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>Sample sections for {config.documentName || "your product doc"}. Open any section to edit it.</p></div>
+        <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}.` : `Sample sections for ${config.documentName || "your product doc"}.`} Open any section to edit it.</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
         <div className={styles.reviewGrid}>
           {cards.map((c) => (
@@ -318,7 +456,7 @@ export default function BusinessPage() {
           {needLook > 0 && <span className={styles.lookNote}>{needLook} section{needLook > 1 ? "s" : ""} need a look</span>}
           <button type="button" className={styles.outlineBtn} onClick={() => go({ name: "i-list" })}>CHECK GESTURES <Arrow /></button>
         </>} />
-        <p className={styles.protoNote}>PROTOTYPE · sample content, not yet generated from your files</p>
+        {!config.aiBuilt && <p className={styles.protoNote}>Sample content: upload a product doc and press Build my demo to have the AI write it</p>}
       </>
     );
   }
@@ -356,9 +494,9 @@ export default function BusinessPage() {
           </div>
         </div>
         <div className={`${styles.card} ${styles.quoteCard}`}>
-          <div className={styles.kicker}>FROM YOUR PRD · {meta?.source.replace("PRD ", "").toUpperCase()}</div>
-          <blockquote className={styles.quote}>“{meta?.quote}”</blockquote>
-          <span className={styles.mutedSmall}>Sample excerpt</span>
+          <div className={styles.kicker}>FROM YOUR PRD · {(s.source ?? meta?.source ?? "").replace("PRD ", "").toUpperCase()}</div>
+          <blockquote className={styles.quote}>“{s.quote ?? meta?.quote}”</blockquote>
+          <span className={styles.mutedSmall}>{s.needsReview && s.reviewNote ? `Needs a look: ${s.reviewNote}` : s.quote ? "From your document" : "Sample excerpt"}</span>
         </div>
         <div className={`${styles.card} ${styles.kioskCard}`}>
           <div className={styles.kicker} style={{ color: "#c8d8ff" }}>ON THE KIOSK</div>
@@ -376,19 +514,27 @@ export default function BusinessPage() {
       <>
         <div className={styles.guide}><h1>UPLOAD</h1><p>Upload a 3D rendering or model of your product</p></div>
         <div className={styles.manualLeft}>
-          <FileButton accept=".fbx,.obj,.stl,.step,.stp,.gltf,.glb" className={`${styles.drop} ${styles.dropTall}`} onFile={(f) => pickFile(f, MODEL_FILE, (n) => save({ ...config, modelName: n }))}>
-            <UploadIcon w={104} h={132} sw={1.4} />
-            <b>{config.modelName ? "REPLACE" : "UPLOAD"}</b>
-            <span>{config.modelName || "fbx, obj, stl, step, or gltf/glb"}</span>
+          <FileButton accept={MODEL_ACCEPT} className={`${styles.drop} ${styles.dropTall}`} onFile={onModelFile}>
+            {modelBusy ? <span className={styles.spinner} /> : <UploadIcon w={104} h={132} sw={1.4} />}
+            <b>{modelBusy ? "FINDING THE PARTS…" : model ? "REPLACE" : "UPLOAD"}</b>
+            <span>{model?.fileName || "glb, gltf, obj, fbx or stl"}</span>
           </FileButton>
         </div>
         <div className={styles.manualRight}>
           {stepper}
           {uploadedList([])}
           <div className={`${styles.card} ${styles.partsCard}`}>
-            <div className={styles.partsHead}><span className={styles.kicker} style={{ color: "#c8d8ff" }}>AI FOUND THESE PARTS</span><span className={styles.mutedSmall}>Sample parts · Orbit Earbuds</span></div>
-            <div className={styles.partsPreview}><PartDiagram selected={null} onPick={() => {}} /></div>
-            <div className={styles.chips}>{MODEL.parts.map((p) => <span key={p.id} className={styles.chip}>{p.id === "shell" ? "Shell" : PART_LABELS[p.id]}</span>)}</div>
+            <div className={styles.partsHead}>
+              <span className={styles.kicker} style={{ color: "#c8d8ff" }}>{model ? "PARTS IN YOUR MODEL" : "SAMPLE PARTS"}</span>
+              {model ? <button type="button" className={styles.textLink} onClick={useSampleModel}>Use sample</button> : <span className={styles.mutedSmall}>Orbit Earbuds</span>}
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <div className={styles.partsPreview}>{model ? <img className={styles.slideImg} src={model.whole} alt={`${model.fileName} preview`} /> : <PartDiagram selected={null} onPick={() => {}} />}</div>
+            <div className={`${styles.chips} ${styles.chipsScroll}`}>
+              {model
+                ? model.parts.map((p) => <span key={p.name} className={styles.chip}>{p.name}</span>)
+                : MODEL.parts.map((p) => <span key={p.id} className={styles.chip}>{p.id === "shell" ? "Shell" : PART_LABELS[p.id]}</span>)}
+            </div>
           </div>
         </div>
         <Foot next={<button type="button" className={styles.outlineBtn} onClick={() => go({ name: "m-section", index: 0 })}>NEXT <Arrow /></button>} />
@@ -454,20 +600,30 @@ export default function BusinessPage() {
   }
 
   if (screen.name === "i-list") {
-    const slide = PART_SLIDES[partIndex];
+    const slides: Slide[] = model
+      ? [
+          { label: "Whole product", part: <ModelImage src={model.whole} />, context: <ModelImage src={model.whole} /> },
+          ...model.parts.map((p) => ({ label: p.name, part: <ModelImage src={p.image} />, context: <ModelImage src={p.context} /> })),
+        ]
+      : SAMPLE_SLIDES;
+    const idx = Math.min(partIndex, slides.length - 1);
+    const slide = slides[idx];
+    const partOptions = model ? ["Whole product", ...model.parts.map((p) => p.name), "None"] : PARTS;
     const showPart = (part: string) => {
-      const i = PART_SLIDES.findIndex((p) => p.label === part);
+      const i = slides.findIndex((p) => p.label === part);
       if (i >= 0) setPartIndex(i);
     };
     body = (
       <>
-        <div className={styles.guide}><h1>INTERACTIONS</h1><p>Scroll through the parts and choose what each gesture shows</p></div>
+        <div className={styles.guide}><h1>INTERACTIONS</h1><p>Scroll through {model ? `the parts of ${model.fileName}` : "the parts"} and map each gesture</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
         <div className={styles.listTools}>
           <button type="button" className={styles.dashedBtn} onClick={() => save({ ...config, mappings: [...config.mappings, { gesture: "4 swipes right", sectionId: "how", part: slide.label, mode: "Highlight" }] })}>+ ADD INTERACTION</button>
         </div>
         <PartViewer
-          index={partIndex}
+          key={model?.fileName ?? "sample"}
+          slides={slides}
+          index={idx}
           onIndex={setPartIndex}
           inContext={inContext}
           onToggleContext={() => setInContext((v) => !v)}
@@ -480,7 +636,7 @@ export default function BusinessPage() {
               <div key={i} className={styles.gestureRow} data-match={m.part === slide.label ? "" : undefined} onClick={() => showPart(m.part)}>
                 <span className={styles.gestureName}><GestureIcon gesture={m.gesture} compact /><Select className={styles.gestureSelect} label={`Gesture ${i + 1}`} value={m.gesture} options={GESTURES.includes(m.gesture) ? GESTURES : [m.gesture, ...GESTURES]} onChange={(v) => updateMapping(i, { gesture: v })} /></span>
                 <Select label={`Text for ${m.gesture}`} value={m.sectionId} options={config.sections.map((s) => ({ value: s.id, label: s.label }))} onChange={(v) => updateMapping(i, { sectionId: v })} />
-                <Select label={`Part for ${m.gesture}`} value={m.part} options={PARTS} onChange={(v) => { updateMapping(i, { part: v }); showPart(v); }} />
+                <Select label={`Part for ${m.gesture}`} value={m.part} options={partOptions.includes(m.part) ? partOptions : [m.part, ...partOptions]} onChange={(v) => { updateMapping(i, { part: v }); showPart(v); }} />
                 <Select label={`Model action for ${m.gesture}`} value={m.mode} options={MODES} onChange={(v) => updateMapping(i, { mode: v })} />
                 <button type="button" className={styles.remove} aria-label={`Remove ${m.gesture}`} onClick={(e) => { e.stopPropagation(); save({ ...config, mappings: config.mappings.filter((_, j) => j !== i) }); }}>×</button>
               </div>
@@ -635,7 +791,13 @@ function EarbudParts({ lit, exploded, viewBox, only }: { lit: PartId[]; exploded
   );
 }
 
-function PartViewer({ index, onIndex, inContext, onToggleContext, gestures }: {
+type Slide = { label: string; part: ReactNode; context: ReactNode };
+
+// eslint-disable-next-line @next/next/no-img-element
+const ModelImage = ({ src }: { src: string }) => <img className={styles.slideImg} src={src} alt="" draggable={false} />;
+
+function PartViewer({ slides, index, onIndex, inContext, onToggleContext, gestures }: {
+  slides: Slide[];
   index: number;
   onIndex: (i: number) => void;
   inContext: boolean;
@@ -645,15 +807,18 @@ function PartViewer({ index, onIndex, inContext, onToggleContext, gestures }: {
   const scroller = useRef<HTMLDivElement>(null);
   const shown = useRef(index); // the slide the scroll position is on
   const target = useRef(index); // the slide we're scrolling to
+  const count = useRef(slides.length);
+  useEffect(() => {
+    count.current = slides.length;
+  });
 
   // Wheel, trackpad and touch each move exactly one part per flick / swipe. (Left to the browser, a single wheel notch
   // scrolls less than half a slide and snaps straight back.)
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const last = PART_SLIDES.length - 1;
     const step = (dir: 1 | -1) => {
-      const next = Math.min(Math.max(target.current + dir, 0), last);
+      const next = Math.min(Math.max(target.current + dir, 0), count.current - 1);
       if (next === target.current) return;
       target.current = next;
       el.scrollTo({ top: next * el.clientHeight, behavior: "smooth" });
@@ -723,10 +888,10 @@ function PartViewer({ index, onIndex, inContext, onToggleContext, gestures }: {
   const go = (i: number) => {
     const el = scroller.current;
     if (!el) return;
-    target.current = Math.min(Math.max(i, 0), PART_SLIDES.length - 1);
+    target.current = Math.min(Math.max(i, 0), slides.length - 1);
     el.scrollTo({ top: target.current * el.clientHeight, behavior: "smooth" });
   };
-  const slide = PART_SLIDES[index];
+  const slide = slides[index];
   const used = gestures(slide.label);
 
   return (
@@ -738,23 +903,21 @@ function PartViewer({ index, onIndex, inContext, onToggleContext, gestures }: {
         tabIndex={0}
         role="region"
         aria-roledescription="carousel"
-        aria-label={`Parts. ${slide.label}, ${index + 1} of ${PART_SLIDES.length}. Scroll or use the arrow keys for the next part.`}
+        aria-label={`Parts. ${slide.label}, ${index + 1} of ${slides.length}. Scroll or use the arrow keys for the next part.`}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); go(index + 1); }
           if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); go(index - 1); }
         }}
       >
-        {PART_SLIDES.map((p, i) => (
+        {slides.map((p, i) => (
           <div key={p.label} className={styles.slide} aria-hidden={i !== index}>
-            {inContext
-              ? <EarbudParts lit={p.ids} exploded viewBox={CONTEXT_BOX} />
-              : <EarbudParts lit={p.ids} exploded={false} only viewBox={boxFor(p.ids, false, p.ids.length > 1 ? 24 : 14)} />}
+            {inContext ? p.context : p.part}
           </div>
         ))}
       </div>
 
       <div className={styles.viewerTop}>
-        <span className={styles.stepCount}>{index + 1} / {PART_SLIDES.length}</span>
+        <span className={styles.stepCount}>{index + 1} / {slides.length}</span>
         <button type="button" className={styles.smallPill} aria-pressed={inContext} onClick={onToggleContext}>
           {inContext ? "VIEW PART" : "VIEW IN CONTEXT"}
         </button>
@@ -766,11 +929,18 @@ function PartViewer({ index, onIndex, inContext, onToggleContext, gestures }: {
         </span>
       </div>
       <div className={styles.stepRail}>
-        {PART_SLIDES.map((p, i) => (
+        {slides.map((p, i) => (
           <button key={p.label} type="button" aria-label={`Show ${p.label}`} data-on={i === index ? "" : undefined} onClick={() => go(i)} />
         ))}
       </div>
-      {index < PART_SLIDES.length - 1 && <span className={styles.scrollCue} aria-hidden="true"><Arrow dir="down" size={14} /></span>}
+      {index < slides.length - 1 && <span className={styles.scrollCue} aria-hidden="true"><Arrow dir="down" size={14} /></span>}
     </div>
   );
 }
+
+// The sample earbud, drawn from the kiosk's own geometry.
+const SAMPLE_SLIDES: Slide[] = PART_SLIDES.map((p) => ({
+  label: p.label,
+  part: <EarbudParts lit={p.ids} exploded={false} only viewBox={boxFor(p.ids, false, p.ids.length > 1 ? 24 : 14)} />,
+  context: <EarbudParts lit={p.ids} exploded viewBox={CONTEXT_BOX} />,
+}));

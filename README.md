@@ -109,6 +109,18 @@ tracking status). Camera chords hold `C` so visitors can't trigger them by accid
 Every screen is drawn on a 1280×720 artboard and scaled to fit the window, so the kiosk and the business portal fit any
 screen size or resolution (other shapes get dark bars at the sides or top and bottom).
 
+## Business portal: 3D model upload and AI setup
+
+- **3D model:** upload a `.glb`, `.gltf` (self-contained), `.obj`, `.fbx` or `.stl` on the business page. It is read in
+  the browser with three.js: the model's own pieces (its named meshes or groups, up to the 24 largest) become the parts
+  the interactions page scrolls through, each rendered on its own and lit up in context. STEP files need exporting to
+  GLB or OBJ first. The file is kept in this browser (IndexedDB), so a refresh doesn't lose it.
+- **AI setup:** "Build my demo" sends the product doc (PDF up to 4 MB, `.txt` or `.md`) and the model's part names to
+  `POST /api/build-demo`, where Claude (`claude-opus-5-5`, structured output) writes the five sections (with the page
+  and a quote it used, and "Needs a look" where the doc is missing facts) and a gesture → part sequence.
+  It needs an Anthropic API key on the server: add `ANTHROPIC_API_KEY` in Vercel → Project → Settings → Environment
+  Variables (or `.env.local` for `npm run dev`) and redeploy. Without it the page says so and offers the sample content.
+
 ## Code map
 
 - `lib/product.ts` — product name, the five topics and their copy, the earbud's parts, staff placeholders. Swap this to
@@ -118,6 +130,9 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
 - `lib/useHandTracking.ts` — webcam + MediaPipe loop; reports the fingertip and palm each frame; can be switched off.
 - `lib/swipe.ts` / `lib/swipeTeach.ts` — swipe detection and teach mode.
 - `app/kiosk/Kiosk.tsx` — screens, pointing and hold-to-press, swipes, attract loop, session reset, staff shortcuts.
+- `lib/modelParts.ts` — reads an uploaded 3D model, splits it into parts and renders each one. `lib/fileStore.ts` keeps
+  uploads in the browser.
+- `app/api/build-demo/route.ts` — the AI route (Claude reads the product doc and drafts the demo).
 - `app/business/page.tsx` — business portal (`/business`): auto setup (default) or manual setup, then gesture mapping.
   Timing constants are at the top.
 - `app/kiosk/Screens.tsx` — the hub, team, brochure and contact screens. `Model3D.tsx` renders the earbud.
