@@ -4,15 +4,20 @@
 import { TOPICS } from "./product";
 
 export type LeadMethod = "badge" | "phone" | "email";
+/** Why the visitor left their details: the brochure, a team member now, or a follow-up later. */
+export type LeadKind = "brochure" | "team" | "contact";
 
 export type Session = {
   start: number; // ms timestamp when the visitor started interacting
   time: Record<string, number>; // ms spent on each topic
   picked: string[]; // topics opened, in order
   pricing: boolean; // wants a pricing follow-up
+  name: string;
   email: string;
   company: string;
+  questions: string; // anything they want the team to know (contact form)
   sent: LeadMethod | null; // brochure requested via
+  contacted: boolean; // left their details for a follow-up
   staffAsked: number | null; // when they asked for a team member
   staff: number; // which team member is coming (index into STAFF)
   staffAccepted: boolean;
@@ -23,9 +28,12 @@ export const newSession = (): Session => ({
   time: {},
   picked: [],
   pricing: true,
+  name: "",
   email: "",
   company: "",
+  questions: "",
   sent: null,
+  contacted: false,
   staffAsked: null,
   staff: 0,
   staffAccepted: false,
@@ -56,13 +64,16 @@ export const minutesAt = (s: Session, now: number) => {
 
 // Leads are kept on this machine for the prototype (a real booth would send them to the CRM).
 const LEADS_KEY = "playform.leads";
-export function saveLead(s: Session, method: LeadMethod) {
+export function saveLead(s: Session, method: LeadMethod, kind: LeadKind = "brochure") {
   try {
     const leads = JSON.parse(localStorage.getItem(LEADS_KEY) ?? "[]");
     leads.push({
       at: new Date().toISOString(),
+      kind,
       method,
+      name: method === "email" ? s.name || null : null,
       email: method === "email" ? s.email : null,
+      questions: s.questions || null,
       company: s.company || null,
       pricing: s.pricing,
       explored: exploredTopics(s).map((t) => t.short),

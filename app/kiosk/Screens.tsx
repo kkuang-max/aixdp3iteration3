@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { MODEL, PRODUCT, STAFF, STAFF_ETA, TOPICS, type PartId } from "@/lib/product";
-import { exploredTopics, longestTopic, minutesAt, type LeadMethod, type Session } from "@/lib/session";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { MODEL, PRODUCT, TOPICS, type PartId } from "@/lib/product";
+import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import Model3D from "./Model3D";
 import styles from "./kiosk.module.css";
 
@@ -11,12 +11,44 @@ import styles from "./kiosk.module.css";
 export const DWELL_TOPIC_MS = 900;
 export const DWELL_BUTTON_MS = 1200;
 
-const HandIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#BFD8FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M9 11V5a1.5 1.5 0 0 1 3 0v5" />
-    <path d="M12 10V4a1.5 1.5 0 0 1 3 0v6" />
-    <path d="M15 10V6a1.5 1.5 0 0 1 3 0v7a7 7 0 0 1-7 7h-.5a6 6 0 0 1-5-2.7L3 14a1.6 1.6 0 0 1 2.6-1.8L9 15V11" />
+// Button icons, one per job.
+const ICON = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "#BFD8FF", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const;
+/** Talk to our team: a speech bubble with a person. */
+export const TeamIcon = () => (
+  <svg {...ICON}>
+    <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12Z" />
+    <circle cx="13" cy="10" r="2.2" />
+    <path d="M9.4 15.4a4 4 0 0 1 7.2 0" />
   </svg>
+);
+/** Get the brochure: download. */
+export const DownloadIcon = () => (
+  <svg {...ICON}>
+    <path d="M12 4v11M7 10.5l5 5 5-5" />
+    <path d="M5 19.5h14" />
+  </svg>
+);
+/** Give us your contact: a contact card. */
+export const ContactIcon = () => (
+  <svg {...ICON}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <circle cx="9" cy="11" r="2" />
+    <path d="M5.8 16a3.4 3.4 0 0 1 6.4 0M14.5 10h4M14.5 13.5h3" />
+  </svg>
+);
+const SendIcon = () => (
+  <svg {...ICON} stroke="currentColor">
+    <path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z" />
+  </svg>
+);
+const BackIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M19 12H5M11 6l-6 6 6 6" />
+  </svg>
+);
+const BadgeIcon = ({ size = 44 }: { size?: number }) => (
+  // eslint-disable-next-line @next/next/no-img-element
+  <img src="/icons/badge.svg" width={size} height={size} alt="" aria-hidden="true" />
 );
 
 /** A button a hand can hold over to press: shows a filling bar while the hand dwells. */
@@ -40,6 +72,7 @@ export function Hub(props: {
   attract: boolean;
   onTeam: () => void;
   onBrochure: () => void;
+  onContact: () => void;
 }) {
   const t = TOPICS[props.topic];
   const { hoverPart } = props;
@@ -50,7 +83,7 @@ export function Hub(props: {
         {PRODUCT.name} / {PRODUCT.brand} · {PRODUCT.booth}
       </div>
       <HandButton className={styles.teamLink} onClick={props.onTeam}>
-        <HandIcon />
+        <TeamIcon />
         TALK TO OUR TEAM
       </HandButton>
 
@@ -119,311 +152,299 @@ export function Hub(props: {
           </span>
         )}
       </div>
-      <HandButton className={styles.brochureLink} onClick={props.onBrochure}>
-        GET THE BROCHURE <span aria-hidden="true">→</span>
-      </HandButton>
-    </>
-  );
-}
-
-// ---- Ask for a team member --------------------------------------------------
-export function Staff(props: {
-  session: Session;
-  onBack: () => void;
-  onLead: () => void;
-  onAccept: () => void;
-  onPass: () => void;
-}) {
-  const s = props.session;
-  const staff = STAFF[s.staff % STAFF.length];
-  const explored = exploredTopics(s);
-  const longest = longestTopic(s);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 15000);
-    return () => clearInterval(id);
-  }, []);
-  const askedFor = s.staffAsked ? Math.max(0, Math.round((now - s.staffAsked) / 60000)) : 0;
-
-  return (
-    <>
-      <div className={styles.eyebrow}>{PRODUCT.name} / ASK OUR TEAM</div>
-
-      <div className={styles.staffBlock}>
-        <div className={styles.staffWho}>
-          <span className={styles.avatar}>{staff.initials}</span>
-          <span className={styles.staffWhoText}>
-            <span className={styles.kicker}>{s.staffAccepted ? "ON THE WAY" : "LETTING THEM KNOW"}</span>
-            <span className={styles.staffName}>{staff.name}</span>
-          </span>
-        </div>
-        <span className={styles.staffHeading}>A TEAM MEMBER WILL BE WITH YOU IN ABOUT {STAFF_ETA}</span>
-        <span className={styles.staffBody}>
-          They already know what you looked at, so you can skip the basics and go straight to your questions.
-        </span>
-        <div className={styles.staffButtons}>
-          <HandButton className={styles.btnFilled} onClick={props.onBack}>
-            KEEP EXPLORING
-          </HandButton>
-          <HandButton className={styles.btnOutline} onClick={props.onLead}>
-            CAN’T WAIT? GET A FOLLOW-UP
-          </HandButton>
-        </div>
-      </div>
-
-      {/* Prototype stand-in for the staff tablet: the buttons work with a mouse or touch. */}
-      <span className={styles.tabletCaption}>WHAT THE SALESPERSON SEES · STAFF TABLET</span>
-      <div className={styles.tablet}>
-        <div className={styles.tabletCard}>
-          <div className={styles.tabletHead}>
-            <span className={styles.tabletKicker}>
-              PLAYFORM · {PRODUCT.kiosk} · VISITOR WAITING
-            </span>
-            <span className={styles.tabletNow}>{s.staffAccepted ? "Accepted" : askedFor ? `${askedFor} min ago` : "Now"}</span>
-          </div>
-          <div className={styles.tabletWho}>
-            <span className={styles.tabletName}>{s.sent === "email" && s.email ? s.email : "[Visitor name]"}</span>
-            <span className={styles.tabletSub}>
-              {s.sent === "email" ? `${s.company || "[Company]"} — typed at the kiosk` : `[Job title] · ${s.company || "[Company]"} — from badge scan`}
-            </span>
-          </div>
-          <div className={styles.tabletExplored}>
-            <span className={styles.tabletKicker}>EXPLORED</span>
-            <div className={styles.chips}>
-              {explored.length ? (
-                explored.map((t) => (
-                  <span key={t.id} className={styles.tabletChip}>
-                    {t.short}
-                  </span>
-                ))
-              ) : (
-                <span className={styles.tabletEmpty}>Nothing yet: start with the overview</span>
-              )}
-            </div>
-          </div>
-          <div className={styles.tabletRows}>
-            <div>
-              <span>Spent longest on</span>
-              <b>{longest ? longest.short : "—"}</b>
-            </div>
-            <div>
-              <span>Time at kiosk</span>
-              <b>{minutesAt(s, now)}</b>
-            </div>
-            <div>
-              <span>Wants pricing follow-up</span>
-              <b>{s.pricing ? "Yes" : "No"}</b>
-            </div>
-          </div>
-          <div className={styles.tabletButtons}>
-            <button type="button" className={styles.tabletPrimary} onClick={props.onAccept} disabled={s.staffAccepted}>
-              {s.staffAccepted ? "ON MY WAY ✓" : "I’M ON MY WAY"}
-            </button>
-            <button type="button" className={styles.tabletSecondary} onClick={props.onPass}>
-              PASS TO TEAMMATE
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles.guide}>
-        <span className={styles.guideTitleSmall}>YOUR SPOT IS SAVED</span>
-        <span className={styles.guideSub}>Feel free to keep looking around the booth</span>
+      <div className={styles.hubActions}>
+        <HandButton className={styles.pillBtn} onClick={props.onBrochure}>
+          <DownloadIcon />
+          GET DIGITAL BROCHURE
+        </HandButton>
+        <HandButton className={styles.pillBtn} onClick={props.onContact}>
+          <ContactIcon />
+          GIVE US YOUR CONTACT
+        </HandButton>
       </div>
     </>
   );
 }
 
-// ---- Take the brochure (lead capture) -----------------------------------------
+// ---- Shared pieces for the "leave your details" screens --------------------------------
 const BADGE_SCAN_MS = 2500; // prototype: the badge "scan" is simulated
+const CONFIRM_S = 10; // confirmation screens go back to the topics after this long
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function Lead(props: {
+type SendProps = {
   session: Session;
   onChange: (patch: Partial<Session>) => void;
-  onSent: (method: LeadMethod) => void;
+  onSent: (method: LeadMethod, kind: LeadKind) => void;
   onBack: () => void;
-  onTeam: () => void;
-}) {
-  const s = props.session;
-  const [method, setMethod] = useState<LeadMethod>("badge");
-  const [scanning, setScanning] = useState(false);
-  const [emailError, setEmailError] = useState(false);
-  const scanTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(scanTimer.current), []);
-  const explored = exploredTopics(s);
+};
 
-  const scanBadge = () => {
-    setMethod("badge");
+function BackLink({ onBack }: { onBack: () => void }) {
+  return (
+    <HandButton className={styles.backLink} onClick={onBack}>
+      <BackIcon /> BACK TO EXPLORING
+    </HandButton>
+  );
+}
+
+/** The exploded earbud on the left of the team / brochure screens. */
+function SideModel({ accent }: { accent: string }) {
+  return (
+    <div className={styles.sideModel} aria-hidden="true">
+      <Model3D geo={MODEL} accent={accent} explode={1} highlight={[]} />
+    </div>
+  );
+}
+
+/** "Scan your badge" card: the scan is simulated in this prototype. */
+function BadgeCard({ onScanned }: { onScanned: () => void }) {
+  const [scanning, setScanning] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const scan = () => {
     if (scanning) return;
     setScanning(true);
-    scanTimer.current = setTimeout(() => {
+    timer.current = setTimeout(() => {
       setScanning(false);
-      props.onSent("badge");
+      onScanned();
     }, BADGE_SCAN_MS);
   };
-  const sendEmail = () => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email.trim())) {
+  return (
+    <button type="button" className={styles.badgeCard} data-dwell={DWELL_BUTTON_MS} data-selected={scanning ? "" : undefined} onClick={scan}>
+      <span className={styles.badgeHead}>
+        <BadgeIcon />
+        <span className={styles.badgeTitle}>SCAN YOUR BADGE</span>
+      </span>
+      <span className={styles.leadCardBody}>
+        {scanning
+          ? "Looking for your badge… hold it still in front of the camera."
+          : "Hold your conference badge up to the camera. We’ll send it to the email on your badge."}
+      </span>
+      {scanning && <span className={styles.scanBar} aria-hidden="true" />}
+      <span className={styles.dwellBar} aria-hidden="true" />
+    </button>
+  );
+}
+
+/** Name / email / company (and optionally questions) form. */
+function DetailsForm(props: {
+  session: Session;
+  onChange: (patch: Partial<Session>) => void;
+  onSubmit: () => void;
+  heading?: string;
+  questions?: boolean;
+  className?: string;
+}) {
+  const s = props.session;
+  const [emailError, setEmailError] = useState(false);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!EMAIL_RE.test(s.email.trim())) {
       setEmailError(true);
       return;
     }
-    props.onSent("email");
+    props.onSubmit();
   };
+  return (
+    <form className={`${styles.formCard} ${props.className ?? ""}`} onSubmit={submit} noValidate>
+      {props.heading && <span className={styles.formHeading}>{props.heading}</span>}
+      <label htmlFor="lead-name" className={styles.leadCardTitle}>TYPE YOUR NAME</label>
+      <input id="lead-name" type="text" placeholder="[Your name]" autoComplete="off" className={styles.input} value={s.name} onChange={(e) => props.onChange({ name: e.target.value })} />
+      <label htmlFor="lead-email" className={styles.leadCardTitle}>TYPE YOUR EMAIL</label>
+      <input
+        id="lead-email"
+        type="email"
+        placeholder="you@company.com"
+        autoComplete="off"
+        className={styles.input}
+        aria-invalid={emailError || undefined}
+        value={s.email}
+        onChange={(e) => {
+          setEmailError(false);
+          props.onChange({ email: e.target.value });
+        }}
+      />
+      <label htmlFor="lead-company" className={styles.inputLabel}>COMPANY (OPTIONAL)</label>
+      <input id="lead-company" type="text" placeholder="[Company]" autoComplete="off" className={`${styles.input} ${styles.inputSmall}`} value={s.company} onChange={(e) => props.onChange({ company: e.target.value })} />
+      {props.questions && (
+        <>
+          <label htmlFor="lead-questions" className={styles.inputLabel}>LET US KNOW IF YOU HAVE ANY SPECIFIC QUESTIONS</label>
+          <textarea id="lead-questions" placeholder="Type here" className={`${styles.input} ${styles.textarea}`} value={s.questions} onChange={(e) => props.onChange({ questions: e.target.value })} />
+        </>
+      )}
+      <button type="submit" className={styles.submitBtn}>
+        {emailError ? "CHECK THE EMAIL ADDRESS" : <><SendIcon /> SUBMIT</>}
+      </button>
+    </form>
+  );
+}
 
-  if (s.sent) {
-    const to =
-      s.sent === "email" ? s.email : s.sent === "badge" ? "the email on your badge" : "your phone";
-    return (
-      <>
-        <div className={styles.eyebrow}>{PRODUCT.name} / TAKE IT WITH YOU</div>
-        <div className={styles.sentBlock}>
-          <span className={styles.sentCheck} aria-hidden="true">
-            ✓
-          </span>
-          <span className={styles.staffHeading}>THE BROCHURE IS ON ITS WAY</span>
-          <span className={styles.staffBody}>
-            We’ll send it to {to}, with the topics you explored and pricing.{s.pricing ? " Someone from our team will also follow up about pricing." : ""}
-          </span>
-          <div className={styles.staffButtons}>
-            <HandButton className={styles.btnFilled} onClick={props.onBack}>
-              KEEP EXPLORING
-            </HandButton>
-            <HandButton className={styles.btnOutline} onClick={props.onTeam}>
-              TALK TO OUR TEAM
-            </HandButton>
-          </div>
-        </div>
-        <div className={styles.guide}>
-          <span className={styles.guideTitleSmall}>THANKS FOR STOPPING BY</span>
-        </div>
-      </>
-    );
-  }
-
+/** Confirmation with a ring that counts down, then goes back to the topics. */
+function Confirmation(props: { title: string; body: string; onDone: () => void; accent: string; eyebrow: string }) {
+  const [left, setLeft] = useState(CONFIRM_S);
+  const done = useRef(props.onDone);
+  useEffect(() => {
+    done.current = props.onDone;
+  });
+  useEffect(() => {
+    const start = Date.now();
+    const id = setInterval(() => {
+      const l = Math.max(0, CONFIRM_S - Math.floor((Date.now() - start) / 1000));
+      setLeft(l);
+      if (l === 0) {
+        clearInterval(id);
+        done.current();
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, []);
+  const C = 2 * Math.PI * 52;
   return (
     <>
-      <div className={styles.eyebrow}>{PRODUCT.name} / TAKE IT WITH YOU</div>
-      <HandButton className={styles.backLink} onClick={props.onBack}>
-        ← BACK TO EXPLORING
-      </HandButton>
-
-      <div className={styles.leadHead}>
-        <span className={styles.leadTitle}>GET THE FULL BROCHURE</span>
-        <span className={styles.staffBody}>Pick the easiest way. We’ll include the topics you explored, plus pricing.</span>
-      </div>
-
-      <div className={styles.leadGrid}>
-        <button
-          type="button"
-          className={styles.leadCard}
-          data-selected={method === "badge" ? "" : undefined}
-          data-dwell={DWELL_BUTTON_MS}
-          onClick={scanBadge}
-        >
-          <span className={styles.leadCardTop}>
-            <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="#BFD8FF" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="12" y="8" width="32" height="44" rx="5" />
-              <path d="M23 8V4h10v4" />
-              <rect x="19" y="20" width="18" height="18" rx="2" />
-              <path d="M23 24h4v4h-4zM29 30h4v4h-4zM29 24h4M23 34h4" />
-            </svg>
-            <span className={styles.fastest}>FASTEST</span>
-          </span>
-          <span className={styles.leadCardTitle}>SCAN YOUR BADGE</span>
-          <span className={styles.leadCardBody}>
-            {scanning
-              ? "Looking for your badge… hold it still in front of the camera."
-              : "Hold your conference badge up to the camera. We’ll send it to the email on your badge."}
-          </span>
-          {scanning && <span className={styles.scanBar} aria-hidden="true" />}
-          <span className={styles.dwellBar} aria-hidden="true" />
+      <div className={styles.eyebrow}>{props.eyebrow}</div>
+      <BackLink onBack={props.onDone} />
+      <SideModel accent={props.accent} />
+      <div className={styles.confirm}>
+        <span className={styles.confirmTitle}>{props.title}</span>
+        <span className={styles.confirmBody}>{props.body}</span>
+        <button type="button" className={styles.countdown} data-dwell={DWELL_BUTTON_MS} onClick={props.onDone} aria-label={`Back to home in ${left} seconds`}>
+          <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
+            <circle cx="62" cy="62" r="52" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="1.5" />
+            <circle cx="62" cy="62" r="52" fill="none" stroke="#C8D8FF" strokeWidth="6" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - left / CONFIRM_S)} transform="rotate(-90 62 62)" style={{ transition: "stroke-dashoffset 250ms linear" }} />
+          </svg>
+          <span className={styles.countdownText}>Back to Home<br />{left} sec</span>
         </button>
-
-        <button
-          type="button"
-          className={styles.leadCard}
-          data-selected={method === "phone" ? "" : undefined}
-          data-dwell={DWELL_BUTTON_MS}
-          onClick={() => setMethod("phone")}
-        >
-          <span className={styles.qr}>[QR]</span>
-          <span className={styles.leadCardTitle}>SCAN WITH YOUR PHONE</span>
-          <span className={styles.leadCardBody}>
-            {method === "phone" ? "Point your phone’s camera at the code. It opens right away." : "Opens the brochure on your phone. Nothing to type."}
-          </span>
-          <span className={styles.dwellBar} aria-hidden="true" />
-        </button>
-
-        <form
-          className={styles.leadCard}
-          data-selected={method === "email" ? "" : undefined}
-          onFocus={() => setMethod("email")}
-          onSubmit={(e) => {
-            e.preventDefault();
-            sendEmail();
-          }}
-        >
-          <label htmlFor="lead-email" className={styles.leadCardTitle}>
-            TYPE YOUR EMAIL
-          </label>
-          <input
-            id="lead-email"
-            type="email"
-            placeholder="you@company.com"
-            autoComplete="off"
-            className={styles.input}
-            aria-invalid={emailError || undefined}
-            value={s.email}
-            onChange={(e) => {
-              setEmailError(false);
-              props.onChange({ email: e.target.value });
-            }}
-          />
-          <label htmlFor="lead-company" className={styles.inputLabel}>
-            COMPANY (OPTIONAL)
-          </label>
-          <input
-            id="lead-company"
-            type="text"
-            placeholder="[Company]"
-            autoComplete="off"
-            className={`${styles.input} ${styles.inputSmall}`}
-            value={s.company}
-            onChange={(e) => props.onChange({ company: e.target.value })}
-          />
-          {(method === "email" || s.email) && (
-            <button type="submit" className={styles.sendBtn}>
-              {emailError ? "CHECK THE EMAIL ADDRESS" : "SEND IT"}
-            </button>
-          )}
-        </form>
       </div>
+    </>
+  );
+}
 
-      <div className={styles.leadFoot}>
-        <div className={styles.chips}>
-          <span className={styles.chipsLabel}>YOU LOOKED AT</span>
-          {explored.length ? (
-            explored.map((t) => (
-              <span key={t.id} className={styles.chip}>
-                {t.short}
-              </span>
-            ))
-          ) : (
-            <span className={styles.chip}>The overview</span>
-          )}
+// ---- Talk to our team now ------------------------------------------------------------
+export function Team(props: SendProps & { accent: string }) {
+  const [done, setDone] = useState(false);
+  if (done) {
+    return (
+      <Confirmation
+        eyebrow={`${PRODUCT.name} / ASK OUR TEAM`}
+        title="YOUR SPOT IS SAVED"
+        body="Feel free to keep looking around. You have been emailed a ticket number and wait time to return."
+        onDone={props.onBack}
+        accent={props.accent}
+      />
+    );
+  }
+  const sent = (method: LeadMethod) => {
+    props.onSent(method, "team");
+    setDone(true);
+  };
+  return (
+    <>
+      <div className={styles.eyebrow}>{PRODUCT.name} / ASK OUR TEAM</div>
+      <BackLink onBack={props.onBack} />
+      <SideModel accent={props.accent} />
+      <div className={styles.sendColumn}>
+        <BadgeCard onScanned={() => sent("badge")} />
+        <span className={styles.orText}>OR</span>
+        <DetailsForm session={props.session} onChange={props.onChange} onSubmit={() => sent("email")} />
+      </div>
+    </>
+  );
+}
+
+// ---- Get the digital brochure -------------------------------------------------------
+export function Brochure(props: SendProps & { accent: string }) {
+  const [done, setDone] = useState<LeadMethod | null>(null);
+  const [phone, setPhone] = useState(false);
+  if (done) {
+    const to = done === "email" ? props.session.email : "the email on your badge";
+    return (
+      <Confirmation
+        eyebrow={`${PRODUCT.name} / DIGITAL BROCHURE`}
+        title="THE BROCHURE IS ON ITS WAY"
+        body={`We’ll send it to ${to}, with the topics you explored.`}
+        onDone={props.onBack}
+        accent={props.accent}
+      />
+    );
+  }
+  const sent = (method: LeadMethod) => {
+    props.onSent(method, "brochure");
+    setDone(method);
+  };
+  return (
+    <>
+      <div className={styles.eyebrow}>{PRODUCT.name} / DIGITAL BROCHURE</div>
+      <BackLink onBack={props.onBack} />
+      <button type="button" className={styles.qrCard} data-dwell={DWELL_BUTTON_MS} data-selected={phone ? "" : undefined} onClick={() => { setPhone(true); props.onSent("phone", "brochure"); }}>
+        <span className={styles.qr}>[QR]</span>
+        <span className={styles.leadCardTitle}>SCAN WITH YOUR PHONE</span>
+        <span className={styles.leadCardBody}>
+          {phone ? "Point your phone’s camera at the code. It opens right away." : "Opens the brochure on your phone. Nothing to type."}
+        </span>
+        <span className={styles.dwellBar} aria-hidden="true" />
+      </button>
+      <div className={styles.sendColumn}>
+        <BadgeCard onScanned={() => sent("badge")} />
+        <span className={styles.orText}>OR</span>
+        <DetailsForm session={props.session} onChange={props.onChange} onSubmit={() => sent("email")} />
+      </div>
+    </>
+  );
+}
+
+// ---- Leave contact info for later -----------------------------------------------------
+export function Contact(props: SendProps & { accent: string; onBrochure: () => void }) {
+  const [done, setDone] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  if (done) {
+    return (
+      <Confirmation
+        eyebrow={`${PRODUCT.name} / LEAVE CONTACT INFO`}
+        title="THANKS, WE’LL BE IN TOUCH"
+        body="Someone from our team will reach out to you soon."
+        onDone={props.onBack}
+        accent={props.accent}
+      />
+    );
+  }
+  const sent = (method: LeadMethod) => {
+    props.onSent(method, "contact");
+    setDone(true);
+  };
+  const scan = () => {
+    if (scanning) return;
+    setScanning(true);
+    timer.current = setTimeout(() => sent("badge"), BADGE_SCAN_MS);
+  };
+  return (
+    <>
+      <div className={styles.eyebrow}>{PRODUCT.name} / LEAVE CONTACT INFO</div>
+      <BackLink onBack={props.onBack} />
+      <div className={styles.contactIntro}>
+        <span className={styles.contactTitle}>LET US CONTACT YOU</span>
+        <span className={styles.contactBody}>
+          {scanning ? "Looking for your badge… hold it still in front of the camera." : "Scan your badge or enter your contact info so we can reach out to you."}
+        </span>
+        <div className={styles.contactButtons}>
+          <HandButton className={styles.pillBtn} onClick={scan}>
+            <BadgeIcon size={20} />
+            {scanning ? "SCANNING…" : "SCAN YOUR BADGE"}
+          </HandButton>
+          <HandButton className={styles.pillBtn} onClick={props.onBrochure}>
+            <DownloadIcon />
+            GET DIGITAL BROCHURE
+          </HandButton>
         </div>
-        <label className={styles.check} data-dwell={DWELL_BUTTON_MS}>
-          <input type="checkbox" checked={s.pricing} onChange={(e) => props.onChange({ pricing: e.target.checked })} />
-          Have someone follow up about pricing
-        </label>
       </div>
-      <p className={styles.consent}>
-        [Consent wording — e.g. “By sharing your details you agree that {PRODUCT.brand} can contact you about this product.” Privacy
-        policy: [link]]
-      </p>
-
-      <div className={styles.guide}>
-        <span className={styles.guideTitleSmall}>NO APP OR SIGN-UP NEEDED</span>
-      </div>
+      <DetailsForm
+        session={props.session}
+        onChange={props.onChange}
+        onSubmit={() => sent("email")}
+        heading="NO BADGE? TYPE IT IN"
+        questions
+        className={styles.contactForm}
+      />
     </>
   );
 }

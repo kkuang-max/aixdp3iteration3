@@ -2,19 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TOPICS, type PartId } from "@/lib/product";
-import { newSession, saveLead, type LeadMethod, type Session } from "@/lib/session";
+import { newSession, saveLead, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
-import { Hub, Lead, Staff } from "./Screens";
+import { Brochure, Contact, Hub, Team } from "./Screens";
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
 const STAGE_W = 1280;
 const STAGE_H = 720;
 
-type Screen = "hub" | "staff" | "lead";
+type Screen = "hub" | "staff" | "brochure" | "contact";
 const DEFAULT_TOPIC = 1; // "How it works": the exploded earbud is the strongest first impression
 
 // Timing.
@@ -149,9 +149,10 @@ export default function Kiosk() {
   );
 
   const onSent = useCallback(
-    (method: LeadMethod) => {
-      session.current.sent = method;
-      saveLead(session.current, method);
+    (method: LeadMethod, kind: LeadKind) => {
+      if (kind === "brochure") session.current.sent = method;
+      else session.current.contacted = true;
+      saveLead(session.current, method, kind);
       bump();
     },
     [bump],
@@ -328,9 +329,26 @@ export default function Kiosk() {
       pointAt(e.clientX, e.clientY, "mouse", now);
     };
     const down = () => markPresent(performance.now());
+    // Staff shortcuts are chords on C (held) so a visitor can't trigger them by accident:
+    // C + Space camera on/off · C + Option/Alt + Space camera view · C + S swipe mode.
+    const held = new Set<string>();
+    const up = (e: KeyboardEvent) => held.delete(e.code);
+    const blur = () => held.clear();
     const key = (e: KeyboardEvent) => {
       if ((e.target as Element).closest("input, textarea")) return; // typing an email
       markPresent(performance.now());
+      held.add(e.code);
+      if (held.has("KeyC") && e.code === "Space") {
+        e.preventDefault();
+        if (e.altKey) setShowSelf((v) => !v);
+        else setCameraOn((v) => !v);
+        return;
+      }
+      if (held.has("KeyC") && e.code === "KeyS") {
+        e.preventDefault();
+        toggleSwipeMode();
+        return;
+      }
       if (KEY_DIRS[e.key] && !teachSink.current) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes
       if (e.key === "t" && swipeModeRef.current) {
         setHasSaved(hasSavedSwipeOptions());
@@ -343,8 +361,6 @@ export default function Kiosk() {
         dbg.text = "";
         setDebug(dbg.on ? `LAST: ${dbg.last}` : null);
       }
-      if (e.key === "c") setShowSelf((v) => !v);
-      if (e.key === "o") setCameraOn((v) => !v);
       if (e.key === "r") resetVisitor(); // staff: start fresh for the next visitor
       if (e.key === "f") {
         if (document.fullscreenElement) document.exitFullscreen();
@@ -354,14 +370,18 @@ export default function Kiosk() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerdown", down);
     window.addEventListener("keydown", key);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
     document.documentElement.addEventListener("pointerleave", pointerGone);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener("keydown", key);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
       document.documentElement.removeEventListener("pointerleave", pointerGone);
     };
-  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor]);
+  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor, toggleSwipeMode]);
 
   // ---- Frame loop: dwell, time per topic, attract loop, reset, explode easing ----
   useEffect(() => {
@@ -451,61 +471,50 @@ export default function Kiosk() {
             guide={{ ...guide, sub: tip ?? guide.sub, tip: !!tip }}
             attract={!present}
             onTeam={() => go("staff")}
-            onBrochure={() => go("lead")}
+            onBrochure={() => go("brochure")}
+            onContact={() => go("contact")}
           />
         )}
         {screen === "staff" && (
-          <Staff
-            session={s}
-            onBack={() => go("hub")}
-            onLead={() => go("lead")}
-            onAccept={() => updateSession({ staffAccepted: true })}
-            onPass={() => updateSession({ staff: s.staff + 1, staffAccepted: false })}
-          />
+          <Team session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} accent={ACCENT} />
         )}
-        {screen === "lead" && (
-          <Lead session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} onTeam={() => go("staff")} />
+        {screen === "brochure" && (
+          <Brochure session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} accent={ACCENT} />
+        )}
+        {screen === "contact" && (
+          <Contact session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} onBrochure={() => go("brochure")} accent={ACCENT} />
         )}
 
-        {/* Kiosk controls (top-right, above the "Talk to our team" link). */}
-        <div className={styles.controls}>
-          <span
-            className={styles.statusDot}
-            data-status={status}
-            title={STATUS_TEXT[status]}
-            style={status === "tracking" ? { background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` } : undefined}
-          />
-          <span className={styles.statusText}>{debug ?? (camOk ? (swipeMode ? "SWIPE ← →" : "POINT & HOLD") : STATUS_TEXT[status])}</span>
-          {camOk && (
-            <button
-              type="button"
-              className={styles.modeToggle}
-              role="switch"
-              aria-checked={swipeMode}
-              onClick={toggleSwipeMode}
-              title="Off: hold your hand over a topic to open it. On: swipe to flip through topics."
-            >
-              SWIPE
-              <span className={styles.switchTrack}>
-                <span className={styles.switchKnob} />
-              </span>
-            </button>
-          )}
-          {camOk && (
-            <button type="button" className={styles.camToggle} aria-pressed={showSelf} onClick={() => setShowSelf((v) => !v)}>
-              {showSelf ? "HIDE CAMERA VIEW" : "CAMERA VIEW"}
-            </button>
-          )}
-          <button
-            type="button"
-            className={styles.camToggle}
-            aria-pressed={!cameraOn}
-            data-off={cameraOn ? undefined : ""}
-            onClick={() => setCameraOn((v) => !v)}
-          >
-            {cameraOn ? "CAMERA OFF" : "CAMERA ON"}
+        {/* Staff shortcuts reminder (top right): hover or focus to see the key chords. */}
+        <div className={styles.shortcuts}>
+          <button type="button" className={styles.shortcutsIcon} aria-label="Keyboard shortcuts" aria-describedby="kiosk-shortcuts">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2.5" y="6" width="19" height="12" rx="2" />
+              <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9" />
+            </svg>
+            <span
+              className={styles.statusDot}
+              data-status={status}
+              style={status === "tracking" ? { background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` } : undefined}
+            />
           </button>
+          <div id="kiosk-shortcuts" role="tooltip" className={styles.shortcutsTip}>
+            <div className={styles.tipStatus}>
+              {STATUS_TEXT[status]}{camOk ? ` · ${swipeMode ? "SWIPE" : "POINT & HOLD"}` : ""}
+            </div>
+            <dl>
+              <dt><kbd>C</kbd> + <kbd>Space</kbd></dt><dd>Camera {cameraOn ? "off" : "on"}</dd>
+              <dt><kbd>C</kbd> + <kbd>⌥ Option</kbd> + <kbd>Space</kbd></dt><dd>{showSelf ? "Hide" : "Show"} camera view</dd>
+              <dt><kbd>C</kbd> + <kbd>S</kbd></dt><dd>Swipe mode {swipeMode ? "off" : "on"}</dd>
+              <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Act like swipes</dd>
+              <dt><kbd>T</kbd></dt><dd>Teach swipes (swipe mode)</dd>
+              <dt><kbd>R</kbd></dt><dd>Start fresh</dd>
+              <dt><kbd>F</kbd></dt><dd>Full screen</dd>
+              <dt><kbd>D</kbd></dt><dd>Tracking debug</dd>
+            </dl>
+          </div>
         </div>
+        {debug && <div className={styles.debugLine}>{debug}</div>}
 
         <div
           className={teaching && camOk ? `${styles.cam} ${styles.camTeach}` : styles.cam}

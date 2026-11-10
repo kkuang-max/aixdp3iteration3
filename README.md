@@ -22,15 +22,17 @@ mouse work too.
 | 04 Where it's used | What are its main applications or use cases? | barely apart |
 | 05 Specs | Key specifications and compatibility | battery lit up |
 
-**Talk to our team** (top right). Tells staff a visitor is waiting. The visitor sees who is coming and roughly when;
-the staff tablet (shown beside it in this prototype; its buttons work with a mouse/touch) shows what the visitor
-explored, which topic they spent longest on, time at the kiosk and whether they want pricing, so the conversation can
-skip the basics. `PASS TO TEAMMATE` swaps who is coming.
+**Talk to our team** (top right). The visitor scans their badge (simulated in this prototype) or types their name,
+email and company to join the queue, then sees "Your spot is saved" with a 10 s countdown back to the topics.
 
-**Get the brochure** (bottom right). Badge scan (fastest; simulated in this prototype), a QR code for the visitor's
-phone, or typing an email (+ optional company). It lists the topics they looked at and has a pricing follow-up
-checkbox (on by default). Leads are saved in this browser's storage (`playform.leads`) for the prototype; a real
-booth would send them to its CRM.
+**Get digital brochure** (bottom right). A QR code for the visitor's phone, a badge scan, or name + email (+ optional
+company), then a confirmation with the same countdown.
+
+**Give us your contact** (bottom right). "Let us contact you": a badge scan or a form with name, email, company and
+any questions, for a follow-up later. It also links to the brochure.
+
+Leads are saved in this browser's storage (`playform.leads`, with why they were left: brochure, team or contact) for
+the prototype; a real booth would send them to its CRM.
 
 **Nobody around:** the hub flips through the topics every 5 s like a pamphlet on a stand to draw people in. After 45 s
 with nobody around (3 min on the "team member is coming" screen), the visitor's session is cleared and the kiosk
@@ -38,7 +40,7 @@ starts over. Staff can press `r` to start fresh straight away.
 
 ## Hand interaction
 
-Two hand modes, switched with the **SWIPE** switch in the top-right controls:
+Two hand modes, switched with **C + S** (see the shortcuts below):
 
 - **Point and hold (default, switch off):** a pointer follows the visitor's index fingertip. Holding it over a topic
   opens it after 0.9 s (the ring around the topic number fills); holding over a button presses it after 1.2 s (a bar
@@ -90,13 +92,22 @@ settings derived from your swipes, so you can see which recognises you better:
 Logic lives in `lib/swipeTeach.ts`; the screen in
 `app/kiosk/TeachSwipes.tsx`.
 
-Controls (top right): tracking status, the SWIPE switch, `CAMERA VIEW` (a small preview with the tracked hand drawn
-on it; the camera always tracks hands, but nobody has to look at themselves by default) and `CAMERA OFF` (releases the
-webcam entirely; touch and mouse keep working).
+Staff shortcuts (there are no on-screen camera buttons; hover the keyboard icon at the top right for a reminder and the
+tracking status). Camera chords hold `C` so visitors can't trigger them by accident:
 
-Staff keys: arrow keys act as swipes, `t` teaches the kiosk your swipes (swipe mode), `d` shows tracking FPS, how
-often the hand is found and the last swipe, `c` shows/hides the camera view, `o` turns the camera off/on, `r` starts
-fresh for the next visitor, `f` toggles fullscreen.
+| Keys | Does |
+| --- | --- |
+| `C` + `Space` | Camera on / off (off releases the webcam; touch and mouse keep working) |
+| `C` + `Option`/`Alt` + `Space` | Show / hide the camera view (a small preview with the tracked hand drawn on it) |
+| `C` + `S` | Swipe mode on / off |
+| arrow keys | Act as swipes |
+| `t` | Teach the kiosk your swipes (swipe mode) |
+| `d` | Tracking FPS, how often the hand is found and the last swipe |
+| `r` | Start fresh for the next visitor |
+| `f` | Fullscreen |
+
+Every screen is drawn on a 1280×720 artboard and scaled to fit the window, so the kiosk and the business portal fit any
+screen size or resolution (other shapes get dark bars at the sides or top and bottom).
 
 ## Code map
 
@@ -106,9 +117,10 @@ fresh for the next visitor, `f` toggles fullscreen.
 - `lib/session.ts` — what the current visitor explored and for how long, pricing interest, contact details; lead storage.
 - `lib/useHandTracking.ts` — webcam + MediaPipe loop; reports the fingertip and palm each frame; can be switched off.
 - `lib/swipe.ts` / `lib/swipeTeach.ts` — swipe detection and teach mode.
-- `app/kiosk/Kiosk.tsx` — screens, pointing and hold-to-press, swipes, attract loop, session reset, camera controls.
+- `app/kiosk/Kiosk.tsx` — screens, pointing and hold-to-press, swipes, attract loop, session reset, staff shortcuts.
+- `app/business/page.tsx` — business portal (`/business`): auto setup (default) or manual setup, then gesture mapping.
   Timing constants are at the top.
-- `app/kiosk/Screens.tsx` — the hub, team and brochure screens. `Model3D.tsx` renders the earbud.
+- `app/kiosk/Screens.tsx` — the hub, team, brochure and contact screens. `Model3D.tsx` renders the earbud.
 
 The hand model ships in `public/models/`, and `npm run dev` / `npm run build` copy the MediaPipe WASM runtime into
 `public/mediapipe/`, so the kiosk works without internet once built (expo Wi-Fi is unreliable).

@@ -58,52 +58,6 @@
   pointer-events: none;
 }
 
-/* Switch: hands point and hold (off) or swipe (on). */
-.modeToggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px 6px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #d6dae6;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  cursor: pointer;
-}
-
-.switchTrack {
-  position: relative;
-  width: 30px;
-  height: 16px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.15);
-  transition: background 200ms ease;
-}
-
-.switchKnob {
-  position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #d6dae6;
-  transition: transform 200ms ease, background 200ms ease;
-}
-
-.modeToggle[aria-checked="true"] .switchTrack {
-  background: #bfd8ff;
-}
-
-.modeToggle[aria-checked="true"] .switchKnob {
-  transform: translateX(14px);
-  background: #131826;
-}
-
 .cam {
   position: absolute;
   z-index: 5;
@@ -204,29 +158,6 @@ video.camVideo {
   height: 100%;
   pointer-events: none;
   opacity: 0.35;
-}
-
-.camToggle {
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #d6dae6;
-  font: inherit;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  cursor: pointer;
-  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
-}
-
-.camToggle:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-}
-
-.camToggle[data-off] {
-  border-color: rgba(245, 201, 214, 0.5);
-  color: #f5c9d6;
 }
 
 /* Teach swipes screen (staff, 't'). */
@@ -344,33 +275,6 @@ video.camVideo {
   }
 }
 
-/* ---- Shared ------------------------------------------------------------- */
-
-.controls {
-  position: absolute;
-  right: 56px;
-  top: 12px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  color: #a9b0c3;
-}
-
-.statusText {
-  margin-right: 4px;
-}
-
-.kicker {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.22em;
-  color: #a9b0c3;
-}
-
 /* Hold-to-press feedback: a bar fills along the bottom of a button while a hand holds over it. */
 .dwellBar {
   position: absolute;
@@ -391,8 +295,8 @@ video.camVideo {
 
 .guide {
   position: absolute;
-  left: 26px;
-  bottom: 26px;
+  left: 64px;
+  bottom: 32px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -403,12 +307,6 @@ video.camVideo {
   font-weight: 700;
   letter-spacing: 0.2em;
   animation: rise 450ms ease-out both;
-}
-
-.guideTitleSmall {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
 }
 
 .guideSub {
@@ -435,19 +333,12 @@ video.camVideo {
   background: #bfd8ff;
 }
 
-.chips {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 /* ---- Topic hub ------------------------------------------------------------ */
 
 .teamLink {
   position: absolute;
   right: 72px;
-  top: 52px;
+  top: 22px;
   min-height: 48px;
   padding: 0 20px;
   border-radius: 999px;
@@ -638,293 +529,24 @@ video.camVideo {
   color: #a9b0c3;
 }
 
-.brochureLink {
-  position: absolute;
-  right: 32px;
-  bottom: 22px;
-  min-height: 44px;
-  padding: 0 4px;
-  border: none;
-  background: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: #ffffff;
-  cursor: pointer;
-}
-
-.brochureLink .dwellBar,
 .backLink .dwellBar {
   left: 4px;
   right: 4px;
   bottom: 4px;
 }
 
-/* ---- Ask our team ------------------------------------------------------------ */
-
-.staffBlock {
-  position: absolute;
-  left: 96px;
-  top: 140px;
-  width: 520px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  animation: rise 450ms ease-out both;
-}
-
-.staffWho {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.avatar {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: #f8f3f1;
-  color: #131826;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  box-shadow: 0 0 0 8px rgba(191, 216, 255, 0.15);
-}
-
-.staffWhoText {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.staffName {
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.staffHeading {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  line-height: 1.3;
-}
-
-.staffBody {
-  font-size: 17px;
-  line-height: 1.5;
-  color: #c9cedd;
-}
-
-.staffButtons {
-  display: flex;
-  gap: 12px;
-  padding-top: 6px;
-}
-
-.btnFilled,
-.btnOutline {
-  position: relative;
-  min-height: 52px;
-  padding: 0 22px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-}
-
-.btnFilled {
-  border: none;
-  background: #f8f3f1;
-  color: #131826;
-}
-
-.btnFilled .dwellBar {
-  background: #2b5bd7;
-}
-
-.btnOutline {
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: transparent;
-  color: #ffffff;
-}
-
-.btnOutline:hover,
-.btnOutline[data-dwelling] {
-  border-color: rgba(191, 216, 255, 0.7);
-}
-
 .teamLink,
-.brochureLink,
 .backLink {
   position: absolute;
 }
 
-.tabletCaption {
-  position: absolute;
-  right: 96px;
-  top: 96px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.22em;
-  color: #a9b0c3;
-}
-
-.tablet {
-  position: absolute;
-  right: 96px;
-  top: 124px;
-  width: 440px;
-  padding: 14px;
-  border-radius: 32px;
-  background: #0c0f18;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-sizing: border-box;
-}
-
-.tabletCard {
-  border-radius: 20px;
-  background: #f4f2f0;
-  color: #161a26;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.tabletHead {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.tabletKicker {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: #5a5f70;
-}
-
-.tabletNow {
-  font-size: 12px;
-  font-weight: 600;
-  color: #2b5bd7;
-  white-space: nowrap;
-}
-
-.tabletWho {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tabletName {
-  font-size: 20px;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.tabletSub {
-  font-size: 14px;
-  color: #4a4f60;
-}
-
-.tabletExplored {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tabletExplored .chips {
-  gap: 6px;
-}
-
-.tabletChip {
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: #e2e6f2;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.tabletEmpty {
-  font-size: 13px;
-  color: #5a5f70;
-}
-
-.tabletRows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 10px;
-  border-top: 1px solid #d9d6d2;
-  font-size: 14px;
-}
-
-.tabletRows > div {
-  display: flex;
-  justify-content: space-between;
-}
-
-.tabletRows span {
-  color: #4a4f60;
-}
-
-.tabletRows b {
-  font-weight: 600;
-}
-
-.tabletButtons {
-  display: flex;
-  gap: 8px;
-}
-
-.tabletPrimary,
-.tabletSecondary {
-  flex: 1;
-  min-height: 48px;
-  border-radius: 12px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  cursor: pointer;
-}
-
-.tabletPrimary {
-  border: none;
-  background: #161a26;
-  color: #ffffff;
-}
-
-.tabletPrimary:disabled {
-  background: #2b5bd7;
-  cursor: default;
-}
-
-.tabletSecondary {
-  border: 1px solid #b9b6b2;
-  background: transparent;
-  color: #161a26;
-}
-
-/* ---- Take it with you (lead capture) ------------------------------------------ */
+/* ---- Leave your details: team, brochure, contact ------------------------------- */
 
 .backLink {
-  right: 72px;
-  top: 52px;
-  min-height: 48px;
+  left: 26px;
+  top: 44px;
+  min-height: 36px;
+  gap: 8px;
   padding: 0 4px;
   border: none;
   background: none;
@@ -936,87 +558,6 @@ video.camVideo {
   letter-spacing: 0.2em;
   color: #ffffff;
   cursor: pointer;
-}
-
-.leadHead {
-  position: absolute;
-  left: 96px;
-  top: 110px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.leadTitle {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-}
-
-.leadGrid {
-  position: absolute;
-  left: 96px;
-  right: 96px;
-  top: 200px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
-}
-
-.leadCard {
-  position: relative;
-  min-height: 270px;
-  padding: 28px;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(19, 24, 38, 0.45);
-  color: #eef0f6;
-  font: inherit;
-  text-align: left;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: background 200ms ease, border-color 200ms ease;
-}
-
-form.leadCard {
-  cursor: default;
-  gap: 12px;
-}
-
-.leadCard[data-selected] {
-  border-color: rgba(191, 216, 255, 0.6);
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.leadCard[data-dwelling] {
-  border-color: rgba(191, 216, 255, 0.6);
-}
-
-.leadCard .dwellBar {
-  left: 28px;
-  right: 28px;
-  bottom: 14px;
-}
-
-.leadCardTop {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  width: 100%;
-}
-
-.fastest {
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: #bfd8ff;
-  color: #131826;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
 }
 
 .leadCardTitle {
@@ -1086,103 +627,6 @@ form.leadCard {
   color: #a9b0c3;
 }
 
-.sendBtn {
-  min-height: 44px;
-  border: none;
-  border-radius: 999px;
-  background: #f8f3f1;
-  color: #131826;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-}
-
-.leadFoot {
-  position: absolute;
-  left: 96px;
-  right: 96px;
-  top: 500px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
-  padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.chipsLabel {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  color: #a9b0c3;
-  margin-right: 6px;
-}
-
-.chip {
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(191, 216, 255, 0.5);
-  font-size: 14px;
-}
-
-.check {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-  padding: 0 4px;
-  font-size: 15px;
-  color: #eef0f6;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.check input {
-  width: 24px;
-  height: 24px;
-  margin: 0;
-  accent-color: #bfd8ff;
-}
-
-.consent {
-  position: absolute;
-  left: 96px;
-  right: 96px;
-  top: 586px;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #a9b0c3;
-}
-
-.sentBlock {
-  position: absolute;
-  left: 96px;
-  top: 150px;
-  width: 640px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  animation: rise 450ms ease-out both;
-}
-
-.sentCheck {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: #bfd8ff;
-  color: #131826;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 32px;
-  font-weight: 700;
-  box-shadow: 0 0 0 8px rgba(191, 216, 255, 0.15);
-}
-
 /* ---- Hand pointer dwell ---------------------------------------------------- */
 
 .cursorDwell {
@@ -1237,4 +681,356 @@ form.leadCard {
   to {
     top: calc(100% - 2px);
   }
+}
+
+/* Hub: brochure + contact buttons (bottom right). */
+.hubActions {
+  position: absolute;
+  right: 72px;
+  top: 632px;
+  display: flex;
+  gap: 18px;
+}
+
+.pillBtn {
+  position: relative;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 216, 255, 0.6);
+  background: rgba(19, 24, 38, 0.6);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: background 200ms ease;
+}
+
+.pillBtn:hover,
+.pillBtn[data-dwelling] {
+  background: rgba(191, 216, 255, 0.12);
+}
+
+/* The exploded earbud, moved to the left half. */
+.sideModel {
+  position: absolute;
+  inset: 0;
+  transform: translate(-312px, 18px) scale(0.86);
+  pointer-events: none;
+}
+
+.sendColumn {
+  position: absolute;
+  left: 641px;
+  top: 44px;
+  width: 528px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.badgeCard,
+.qrCard,
+.formCard {
+  position: relative;
+  box-sizing: border-box;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(19, 24, 38, 0.45);
+  color: #eef0f6;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.badgeCard,
+.qrCard {
+  padding: 22px 28px;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.badgeCard[data-selected],
+.badgeCard[data-dwelling],
+.qrCard[data-selected],
+.qrCard[data-dwelling] {
+  border-color: rgba(191, 216, 255, 0.6);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.badgeCard .dwellBar,
+.qrCard .dwellBar {
+  left: 28px;
+  right: 28px;
+  bottom: 10px;
+}
+
+.badgeHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badgeTitle {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.orText {
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.formCard {
+  padding: 24px 28px;
+  gap: 10px;
+}
+
+.formHeading {
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.textarea {
+  min-height: 140px;
+  padding: 16px 18px;
+  resize: none;
+  line-height: 1.4;
+}
+
+.submitBtn {
+  min-height: 48px;
+  margin-top: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 216, 255, 0.6);
+  background: rgba(19, 24, 38, 0.6);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+}
+
+.submitBtn:hover {
+  background: rgba(191, 216, 255, 0.12);
+}
+
+.qrCard {
+  position: absolute;
+  left: 266px;
+  top: 77px;
+  width: 349px;
+  min-height: 270px;
+  padding: 28px;
+  gap: 14px;
+}
+
+.contactIntro {
+  position: absolute;
+  left: 102px;
+  top: 262px;
+  width: 498px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contactTitle {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.contactBody {
+  font-size: 20px;
+  line-height: 1.3;
+  color: #c9cedd;
+}
+
+.contactButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.contactForm {
+  position: absolute;
+  left: 641px;
+  top: 41px;
+  width: 528px;
+}
+
+/* Confirmation with a countdown back to the topics. */
+.confirm {
+  position: absolute;
+  left: 640px;
+  top: 206px;
+  width: 470px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  animation: rise 450ms ease-out both;
+}
+
+.confirmTitle {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.confirmBody {
+  font-size: 20px;
+  line-height: 1.25;
+  color: #c9cedd;
+}
+
+.countdown {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  margin-top: 34px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.countdown svg {
+  position: absolute;
+  inset: 0;
+}
+
+.countdownText {
+  position: relative;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.35;
+}
+
+/* ---- Staff shortcuts reminder (top right) ----------------------------------- */
+.shortcuts {
+  position: absolute;
+  right: 22px;
+  top: 28px;
+  z-index: 12;
+}
+
+.shortcutsIcon {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(19, 24, 38, 0.6);
+  color: #a9b0c3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+.shortcutsIcon .statusDot {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  width: 8px;
+  height: 8px;
+}
+
+.shortcutsTip {
+  position: absolute;
+  right: 0;
+  top: 44px;
+  width: 340px;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(13, 17, 28, 0.96);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  color: #d6dae6;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms;
+}
+
+.shortcuts:hover .shortcutsTip,
+.shortcuts:focus-within .shortcutsTip {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.tipStatus {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #a9b0c3;
+}
+
+.shortcutsTip dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  align-items: center;
+}
+
+.shortcutsTip dt {
+  white-space: nowrap;
+}
+
+.shortcutsTip dd {
+  margin: 0;
+  color: #c9cedd;
+}
+
+.shortcutsTip kbd {
+  display: inline-block;
+  min-width: 14px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+}
+
+.debugLine {
+  position: absolute;
+  right: 72px;
+  top: 80px;
+  z-index: 6;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: #a9b0c3;
 }
