@@ -224,17 +224,6 @@
   font-weight: 500;
 }
 
-.chipOutline {
-  height: 30px;
-  padding: 0 13px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 15px;
-  display: inline-flex;
-  align-items: center;
-  font-size: 13px;
-  color: #c9cfdd;
-}
-
 .numCircle {
   width: 18px;
   height: 18px;
@@ -1021,10 +1010,10 @@
 
 .gestureCard {
   position: absolute;
-  left: 80px;
+  left: 476px;
   top: 183px;
-  width: 1086px;
-  height: 426px;
+  width: 690px;
+  height: 420px;
   padding: 19px 25px 16px;
   display: flex;
   flex-direction: column;
@@ -1033,17 +1022,18 @@
 .gestureHead,
 .gestureRow {
   display: grid;
-  grid-template-columns: 220px 350px 220px 1fr 28px;
-  gap: 16px;
+  grid-template-columns: 150px minmax(0, 1fr) 144px 144px 20px;
+  gap: 8px;
   align-items: center;
 }
 
 .gestureHead {
+  white-space: nowrap;
   padding: 0 4px 9px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   color: #aeb4c6;
 }
 
@@ -1091,40 +1081,6 @@
   color: #aeb4c6;
 }
 
-/* ---- Interactions 2 · model + sequence ---- */
-.modelCard {
-  position: absolute;
-  left: 80px;
-  top: 151px;
-  width: 532px;
-  height: 451px;
-  padding: 29px;
-  display: flex;
-  flex-direction: column;
-}
-
-.modelBox {
-  position: relative;
-  touch-action: none;
-  overscroll-behavior: contain;
-  outline: none;
-  flex: 1;
-  min-height: 0;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.modelHint {
-  margin: 12px 0 0;
-  text-align: center;
-  font-size: 13px;
-  color: #aeb4c6;
-}
-
 .diagram {
   display: block;
   width: 100%;
@@ -1148,156 +1104,11 @@
   filter: drop-shadow(0 0 10px #8cbeff);
 }
 
-.sequence {
-  position: absolute;
-  left: 680px;
-  top: 78px;
-  width: 488px;
-  height: 524px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.seqList {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.seqItem {
-  flex: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  background: rgba(12, 15, 28, 0.35);
-}
-
-.seqItem[data-active] {
-  border-color: #c8d8ff;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.seqHead {
-  width: 100%;
-  min-height: 46px;
-  padding: 10px 17px;
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  text-align: left;
-}
-
-.seqGesture {
-  flex: none;
-  width: 130px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #c8d8ff;
-}
-
-.seqWhat {
-  flex: 1;
-  font-size: 15px;
-}
-
-.grip {
-  color: #8c90a0;
-}
-
-.seqBody {
-  padding: 0 17px 15px;
-}
-
-.seqSelects {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
-}
-
-.seqSelects select {
-  height: 40px;
-  font-size: 14px;
-}
-
-.seqQuote {
-  margin: 10px 0 0;
-  font-size: 14px;
-  color: #c9cfdd;
-}
-
-/* Interactions 2: step through the model part by part. */
-.modelBox:focus-visible {
-  border-color: rgba(200, 216, 255, 0.7);
-}
-
-.stepCaption {
-  position: absolute;
-  left: 16px;
-  top: 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  color: #c8d8ff;
-}
-
 .stepCount {
   padding: 3px 9px;
   border-radius: 999px;
   background: rgba(200, 216, 255, 0.14);
   letter-spacing: 0.08em;
-}
-
-.stepPart {
-  transition: opacity 380ms ease, transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 300ms ease;
-  cursor: pointer;
-  outline: none;
-}
-
-.stepPart[data-state="on"] {
-  opacity: 1;
-  filter: drop-shadow(0 0 10px #8cbeff);
-}
-
-.stepPart[data-state="seen"] {
-  opacity: 0.32;
-}
-
-.stepPart[data-state="seen"]:hover,
-.stepPart[data-state="seen"]:focus {
-  opacity: 0.7;
-}
-
-.stepPart[data-state="hidden"] {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.stepLabel {
-  animation: step-label 320ms ease-out both;
-}
-
-@keyframes step-label {
-  from {
-    opacity: 0;
-  }
-}
-
-.offModel {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  text-align: center;
-  font-size: 14px;
-  color: #f2c27a;
 }
 
 .stepRail {
@@ -1327,4 +1138,204 @@
 .stepRail button[data-on] {
   height: 22px;
   background: #c8d8ff;
+}
+
+.gestureCard .select select {
+  height: 40px;
+  font-size: 14px;
+}
+
+.gestureCard .gestureSelect select {
+  font-size: 15px;
+}
+
+.gestureRow {
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 200ms ease, box-shadow 200ms ease;
+}
+
+.gestureRow[data-match] {
+  background: rgba(200, 216, 255, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(200, 216, 255, 0.45);
+}
+
+/* ---- Interactions · scrollable part viewer (one part per slide) ---- */
+.viewer {
+  position: absolute;
+  left: 80px;
+  top: 183px;
+  width: 380px;
+  height: 420px;
+  overflow: hidden;
+}
+
+.viewerScroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: hidden; /* moved one part at a time by wheel / touch / keys (see PartViewer) */
+  touch-action: none;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  outline: none;
+}
+
+.viewerScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.viewerScroll:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(200, 216, 255, 0.6);
+  border-radius: 28px;
+}
+
+.slide {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 64px 56px 104px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slideSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.slidePart {
+  opacity: 0.35;
+  transition: opacity 300ms ease;
+}
+
+.slidePart[data-on] {
+  opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(140, 190, 255, 0.55));
+}
+
+.viewerTop {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.viewerTop > * {
+  pointer-events: auto;
+}
+
+.stepCount {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(200, 216, 255, 0.14);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #c8d8ff;
+}
+
+.viewerBottom {
+  position: absolute;
+  left: 24px;
+  right: 40px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.viewerName {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.viewerUsed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.usedChip {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  background: rgba(200, 216, 255, 0.12);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #dfe7ff;
+}
+
+.usedChip svg {
+  width: 12px;
+  height: 12px;
+}
+
+.stepRail {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stepRail button {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: height 250ms ease, background 250ms ease;
+}
+
+.stepRail button[data-on] {
+  height: 24px;
+  background: #c8d8ff;
+}
+
+.scrollCue {
+  position: absolute;
+  right: 12px;
+  bottom: 18px;
+  color: #c8d8ff;
+  animation: cue 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes cue {
+  50% {
+    transform: translateY(4px);
+    opacity: 0.5;
+  }
+}
+
+.gestureCard .gestureSelect select {
+  font-size: 14px;
+  padding-right: 26px;
+}
+
+.gestureCard .gestureArrows {
+  gap: 0;
+}
+
+.gestureCard .gestureName svg {
+  width: 14px;
+  height: 14px;
+}
+
+.gestureCard .gestureRows {
+  gap: 8px;
 }

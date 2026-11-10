@@ -29,8 +29,7 @@ type Screen =
   | { name: "a-edit"; id: string }
   | { name: "m-model" }
   | { name: "m-section"; index: number }
-  | { name: "i-list" }
-  | { name: "i-model" };
+  | { name: "i-list" };
 
 const STAGE_W = 1280;
 const STAGE_H = 720;
@@ -93,13 +92,13 @@ const UploadIcon = ({ w = 26, h = 32, sw = 1.6 }: { w?: number; h?: number; sw?:
 const Chevron = () => (
   <svg className={styles.chevron} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
 );
-function GestureIcon({ gesture }: { gesture: string }) {
+function GestureIcon({ gesture, compact }: { gesture: string; compact?: boolean }) {
   const g = gesture.toLowerCase();
   if (g.includes("up")) return <Arrow dir="up" size={16} color="#C8D8FF" />;
   if (g.includes("down")) return <Arrow dir="down" size={16} color="#C8D8FF" />;
   if (g.includes("left")) return <Arrow dir="left" size={16} color="#C8D8FF" />;
   if (g.includes("point")) return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8D8FF" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><circle cx="12" cy="12" r="8" /></svg>;
-  const n = Math.max(1, Math.min(4, parseInt(g, 10) || 1));
+  const n = compact ? 1 : Math.max(1, Math.min(4, parseInt(g, 10) || 1));
   return <span className={styles.gestureArrows}>{Array.from({ length: n }, (_, i) => <Arrow key={i} dir="right" size={16} color="#C8D8FF" />)}</span>;
 }
 
@@ -154,7 +153,8 @@ export default function BusinessPage() {
   const [config, setConfig] = useState<BusinessConfig>(defaultConfig);
   const [mode, setMode] = useState<Mode>("auto");
   const [screen, setScreen] = useState<Screen>({ name: "a-upload" });
-  const [activeMapping, setActiveMapping] = useState(1);
+  const [partIndex, setPartIndex] = useState(0); // which part the interactions viewer shows
+  const [inContext, setInContext] = useState(false); // show that part inside the whole earbud
   const [editingPreview, setEditingPreview] = useState(false);
   const [notice, setNotice] = useState("");
   const [scale, setScale] = useState(1);
@@ -177,11 +177,6 @@ export default function BusinessPage() {
     return () => window.removeEventListener("resize", fit);
   }, []);
 
-  // Keep the selected gesture visible in the sequence list while stepping through the model.
-  useEffect(() => {
-    if (screen.name === "i-model") document.querySelector(`.${styles.seqItem}[data-active]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [activeMapping, screen.name]);
-
   useEffect(() => {
     if (!notice) return;
     const id = setTimeout(() => setNotice(""), 3500);
@@ -194,7 +189,6 @@ export default function BusinessPage() {
   };
   const updateSection = (id: string, fn: (s: Section) => Section) => save({ ...config, sections: config.sections.map((s) => (s.id === id ? fn(s) : s)) });
   const updateMapping = (i: number, patch: Partial<Mapping>) => save({ ...config, mappings: config.mappings.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
-  const sectionLabel = (id: string) => config.sections.find((s) => s.id === id)?.label ?? id;
 
   const pickFile = (files: FileList | null, allowed: RegExp, apply: (name: string) => void) => {
     const file = files?.[0];
@@ -460,24 +454,35 @@ export default function BusinessPage() {
   }
 
   if (screen.name === "i-list") {
+    const slide = PART_SLIDES[partIndex];
+    const showPart = (part: string) => {
+      const i = PART_SLIDES.findIndex((p) => p.label === part);
+      if (i >= 0) setPartIndex(i);
+    };
     body = (
       <>
-        <div className={styles.guide}><h1>INTERACTIONS</h1><p>Choose what each hand gesture shows</p></div>
+        <div className={styles.guide}><h1>INTERACTIONS</h1><p>Scroll through the parts and choose what each gesture shows</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
         <div className={styles.listTools}>
-          <button type="button" className={styles.outlineSmall} onClick={() => go({ name: "i-model" })}>MODEL VIEW</button>
-          <button type="button" className={styles.dashedBtn} onClick={() => { save({ ...config, mappings: [...config.mappings, { gesture: "4 swipes right", sectionId: "how", part: "None", mode: "Highlight" }] }); setActiveMapping(config.mappings.length); }}>+ ADD INTERACTION</button>
+          <button type="button" className={styles.dashedBtn} onClick={() => save({ ...config, mappings: [...config.mappings, { gesture: "4 swipes right", sectionId: "how", part: slide.label, mode: "Highlight" }] })}>+ ADD INTERACTION</button>
         </div>
+        <PartViewer
+          index={partIndex}
+          onIndex={setPartIndex}
+          inContext={inContext}
+          onToggleContext={() => setInContext((v) => !v)}
+          gestures={(label) => config.mappings.filter((m) => m.part === label).map((m) => m.gesture)}
+        />
         <div className={`${styles.card} ${styles.gestureCard}`}>
-          <div className={styles.gestureHead}><span>GESTURE</span><span>SHOWS THIS TEXT</span><span>HIGHLIGHTS THIS PART</span><span>MODEL DOES</span><span /></div>
+          <div className={styles.gestureHead}><span>GESTURE</span><span>SHOWS</span><span>HIGHLIGHTS</span><span>MODEL DOES</span><span /></div>
           <div className={styles.gestureRows}>
             {config.mappings.map((m, i) => (
-              <div key={i} className={styles.gestureRow}>
-                <span className={styles.gestureName}><GestureIcon gesture={m.gesture} /><Select className={styles.gestureSelect} label={`Gesture ${i + 1}`} value={m.gesture} options={GESTURES.includes(m.gesture) ? GESTURES : [m.gesture, ...GESTURES]} onChange={(v) => updateMapping(i, { gesture: v })} /></span>
-                <Select label={`Text for ${m.gesture}`} value={m.sectionId} options={config.sections.map((s) => ({ value: s.id, label: `${s.label} · ${s.title}` }))} onChange={(v) => updateMapping(i, { sectionId: v })} />
-                <Select label={`Part for ${m.gesture}`} value={m.part} options={PARTS} onChange={(v) => updateMapping(i, { part: v })} />
+              <div key={i} className={styles.gestureRow} data-match={m.part === slide.label ? "" : undefined} onClick={() => showPart(m.part)}>
+                <span className={styles.gestureName}><GestureIcon gesture={m.gesture} compact /><Select className={styles.gestureSelect} label={`Gesture ${i + 1}`} value={m.gesture} options={GESTURES.includes(m.gesture) ? GESTURES : [m.gesture, ...GESTURES]} onChange={(v) => updateMapping(i, { gesture: v })} /></span>
+                <Select label={`Text for ${m.gesture}`} value={m.sectionId} options={config.sections.map((s) => ({ value: s.id, label: s.label }))} onChange={(v) => updateMapping(i, { sectionId: v })} />
+                <Select label={`Part for ${m.gesture}`} value={m.part} options={PARTS} onChange={(v) => { updateMapping(i, { part: v }); showPart(v); }} />
                 <Select label={`Model action for ${m.gesture}`} value={m.mode} options={MODES} onChange={(v) => updateMapping(i, { mode: v })} />
-                <button type="button" className={styles.remove} aria-label={`Remove ${m.gesture}`} onClick={() => save({ ...config, mappings: config.mappings.filter((_, j) => j !== i) })}>×</button>
+                <button type="button" className={styles.remove} aria-label={`Remove ${m.gesture}`} onClick={(e) => { e.stopPropagation(); save({ ...config, mappings: config.mappings.filter((_, j) => j !== i) }); }}>×</button>
               </div>
             ))}
             {config.mappings.length === 0 && <p className={styles.mutedSmall}>No interactions yet. Add one above.</p>}
@@ -488,57 +493,6 @@ export default function BusinessPage() {
           <a className={styles.outlineBtnDim} href="/" target="_blank" rel="noopener noreferrer">TRY IT</a>
           <button type="button" className={styles.outlineBtn} onClick={finish}>FINISH <Arrow /></button>
         </>} />
-      </>
-    );
-  }
-
-  if (screen.name === "i-model") {
-    const idx = Math.min(activeMapping, config.mappings.length - 1);
-    const active = config.mappings[idx];
-    const assign = (part: string) => {
-      if (idx < 0) return;
-      updateMapping(idx, { part });
-      setNotice(`${part} linked to “${active.gesture}”.`);
-    };
-    const firstLine = active ? config.sections.find((s) => s.id === active.sectionId)?.rows[0] : undefined;
-    body = (
-      <>
-        <div className={styles.guide}><h1>INTERACTIONS</h1><p>Each swipe right reveals the next part</p></div>
-        <div className={`${styles.card} ${styles.modelCard}`}>
-          <PartScroller mappings={config.mappings} index={idx} onIndex={setActiveMapping} onPick={assign} />
-          <p className={styles.modelHint}>Scroll or swipe up and down to step through the parts · tap a part to link it</p>
-        </div>
-        <div className={styles.sequence}>
-          {stepper}
-          <div className={styles.kicker} style={{ marginTop: 6 }}>GESTURE SEQUENCE</div>
-          <div className={styles.seqList}>
-            {config.mappings.map((m, i) => (
-              <div key={i} className={styles.seqItem} data-active={i === idx ? "" : undefined}>
-                <button type="button" className={styles.seqHead} onClick={() => setActiveMapping(i)} aria-expanded={i === idx}>
-                  <span className={styles.seqGesture}>{m.gesture.toUpperCase()}</span>
-                  <span className={styles.seqWhat}><b>{m.part}</b>{i === idx ? "" : ` · ${sectionLabel(m.sectionId)}`}</span>
-                  <span className={styles.grip} aria-hidden="true">⋮⋮</span>
-                </button>
-                {i === idx && (
-                  <div className={styles.seqBody}>
-                    <div className={styles.seqSelects}>
-                      <Select label="Part" value={m.part} options={PARTS} onChange={(v) => updateMapping(i, { part: v })} />
-                      <Select label="Text" value={m.sectionId} options={config.sections.map((s) => ({ value: s.id, label: s.label }))} onChange={(v) => updateMapping(i, { sectionId: v })} />
-                      <Select label="Model action" value={m.mode} options={MODES} onChange={(v) => updateMapping(i, { mode: v })} />
-                    </div>
-                    {firstLine && <p className={styles.seqQuote}>“{firstLine.a}{firstLine.b ? ` · ${firstLine.b}` : ""}”</p>}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className={styles.chips}>
-            <span className={styles.chipOutline}>Swipe left · back one</span>
-            <span className={styles.chipOutline}>Swipe up · specs</span>
-            <span className={styles.chipOutline}>Open palm · reset</span>
-          </div>
-        </div>
-        <Foot back={{ label: "LIST VIEW", onClick: () => go({ name: "i-list" }) }} next={<button type="button" className={styles.outlineBtn} onClick={finish}>FINISH <Arrow /></button>} />
       </>
     );
   }
@@ -617,137 +571,206 @@ function PartDiagram({ selected, onPick, badges }: { selected: string | null; on
   );
 }
 
-// Interactions 2: the model is revealed one gesture at a time. Scrolling down on a trackpad / mouse wheel, or swiping
-// up on a touch screen, steps to the next gesture's part; the other way steps back. Earlier parts stay faintly visible
-// so the model builds up piece by piece; later ones are hidden until their step.
-const WHEEL_STEP = 50; // accumulated wheel delta (px) for one step
-const WHEEL_COOLDOWN_MS = 380; // trackpads keep sending momentum events after a flick: one flick = one step
-const TOUCH_STEP = 36; // finger travel (px, unscaled) for one step
+// ---- Interactions: a scrollable viewer with one part per slide -----------------------------
+const WHEEL_STEP = 40; // accumulated wheel delta (px) for one part
+const WHEEL_COOLDOWN_MS = 420; // trackpads keep sending momentum after a flick: one flick = one part
+const TOUCH_STEP = 30; // finger travel (px) for one part
+// Each slide fills the square and shows one part big and centred. It is a real scroll container (scroll-snap), so a
+// trackpad, mouse wheel, touch swipe or the arrow keys move through the parts one at a time. "View in context" swaps
+// the isolated part for the whole exploded earbud with that part lit up.
+const PART_SLIDES: { label: string; ids: PartId[] }[] = [
+  { label: "Whole product", ids: MODEL.parts.map((p) => p.id) },
+  ...(["tip", "driver", "battery", "board", "mic"] as PartId[]).map((id) => ({ label: PART_LABELS[id], ids: [id] })),
+];
 
-function PartScroller({ mappings, index, onIndex, onPick }: { mappings: Mapping[]; index: number; onIndex: (i: number) => void; onPick: (part: string) => void }) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const live = useRef({ index, count: mappings.length, onIndex });
-  useEffect(() => {
-    live.current = { index, count: mappings.length, onIndex };
+/** Bounding box of an outline (M/L/Q/A/Z with absolute coordinates, as in lib/product.ts). */
+function pathBox(d: string, dx = 0, dy = 0) {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const add = (x: number, y: number) => { xs.push(x + dx); ys.push(y + dy); };
+  let last: [number, number] = [0, 0];
+  for (const [, cmd, args] of d.matchAll(/([MLQAZ])([^MLQAZ]*)/gi)) {
+    const n = (args.match(/-?\d*\.?\d+/g) ?? []).map(Number);
+    if (/A/i.test(cmd)) {
+      // Half-circle arcs: the circle's centre is halfway between the ends.
+      for (let i = 0; i + 6 < n.length; i += 7) {
+        const [r, end] = [n[i], [n[i + 5], n[i + 6]] as [number, number]];
+        const c = [(last[0] + end[0]) / 2, (last[1] + end[1]) / 2];
+        add(c[0] - r, c[1] - r); add(c[0] + r, c[1] + r);
+        last = end;
+      }
+    } else {
+      for (let i = 0; i + 1 < n.length; i += 2) { add(n[i], n[i + 1]); last = [n[i], n[i + 1]]; }
+    }
+  }
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+function boxFor(ids: PartId[], exploded: boolean, pad: number) {
+  const boxes = ids.map((id) => {
+    const p = MODEL.parts.find((x) => x.id === id)!;
+    const off = exploded ? MODEL.off[id] : [0, 0];
+    return pathBox(p.d, off[0] * 0.7, off[1] * 0.7);
   });
+  const x0 = Math.min(...boxes.map((b) => b.x0)), y0 = Math.min(...boxes.map((b) => b.y0));
+  const x1 = Math.max(...boxes.map((b) => b.x1)), y1 = Math.max(...boxes.map((b) => b.y1));
+  const size = Math.max(x1 - x0, y1 - y0) + pad * 2; // square, so every part ends up the same "big"
+  return `${(x0 + x1) / 2 - size / 2} ${(y0 + y1) / 2 - size / 2} ${size} ${size}`;
+}
+const CONTEXT_BOX = boxFor(MODEL.parts.map((p) => p.id), true, 30);
 
+function EarbudParts({ lit, exploded, viewBox, only }: { lit: PartId[]; exploded: boolean; viewBox: string; only?: boolean }) {
+  return (
+    <svg className={styles.slideSvg} viewBox={viewBox} aria-hidden="true">
+      {MODEL.parts.filter((part) => !only || lit.includes(part.id)).map((part) => {
+        const on = lit.includes(part.id);
+        const off = exploded ? MODEL.off[part.id] : [0, 0];
+        return (
+          <path key={part.id} d={part.d} transform={`translate(${off[0] * 0.7} ${off[1] * 0.7})`} fillRule="evenodd"
+            className={styles.slidePart} data-on={on ? "" : undefined}
+            fill={on ? (part.tone === "metal" ? "#c8d9ff" : "#eef1fb") : "#8d97b3"} stroke={on ? "#ffffff" : "#5d6a8a"} strokeWidth={on ? 2.5 : 1.5} />
+        );
+      })}
+    </svg>
+  );
+}
+
+function PartViewer({ index, onIndex, inContext, onToggleContext, gestures }: {
+  index: number;
+  onIndex: (i: number) => void;
+  inContext: boolean;
+  onToggleContext: () => void;
+  gestures: (label: string) => string[];
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const shown = useRef(index); // the slide the scroll position is on
+  const target = useRef(index); // the slide we're scrolling to
+
+  // Wheel, trackpad and touch each move exactly one part per flick / swipe. (Left to the browser, a single wheel notch
+  // scrolls less than half a slide and snaps straight back.)
   useEffect(() => {
-    const box = boxRef.current;
-    if (!box) return;
-    let acc = 0;
-    let lockedUntil = 0;
-    let touchY: number | null = null;
+    const el = scroller.current;
+    if (!el) return;
+    const last = PART_SLIDES.length - 1;
     const step = (dir: 1 | -1) => {
-      const { index: i, count, onIndex: set } = live.current;
-      const next = Math.min(Math.max(i + dir, 0), count - 1);
-      if (next !== i) set(next);
+      const next = Math.min(Math.max(target.current + dir, 0), last);
+      if (next === target.current) return;
+      target.current = next;
+      el.scrollTo({ top: next * el.clientHeight, behavior: "smooth" });
     };
+    let acc = 0;
+    let quietUntil = 0;
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       const now = performance.now();
-      if (now < lockedUntil) {
-        lockedUntil = now + WHEEL_COOLDOWN_MS / 2; // still in the same flick's momentum
+      if (now < quietUntil) {
+        quietUntil = now + WHEEL_COOLDOWN_MS / 2; // still the same flick's momentum
         return;
       }
       acc += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
       if (Math.abs(acc) >= WHEEL_STEP) {
         step(acc > 0 ? 1 : -1);
         acc = 0;
-        lockedUntil = now + WHEEL_COOLDOWN_MS;
+        quietUntil = now + WHEEL_COOLDOWN_MS;
       }
     };
-    const start = (e: TouchEvent) => { touchY = e.touches[0].clientY; };
-    const move = (e: TouchEvent) => {
-      if (touchY === null) return;
+    let startY: number | null = null;
+    let moved = false;
+    const touchStart = (e: TouchEvent) => { startY = e.touches[0].clientY; moved = false; };
+    const touchMove = (e: TouchEvent) => {
+      if (startY === null) return;
       e.preventDefault();
-      const dy = touchY - e.touches[0].clientY; // finger up → positive → next part
-      if (Math.abs(dy) >= TOUCH_STEP) {
+      const dy = startY - e.touches[0].clientY; // finger up → next part
+      if (!moved && Math.abs(dy) >= TOUCH_STEP) {
+        moved = true; // one part per swipe
         step(dy > 0 ? 1 : -1);
-        touchY = e.touches[0].clientY;
       }
     };
-    const end = () => { touchY = null; };
-    box.addEventListener("wheel", wheel, { passive: false });
-    box.addEventListener("touchstart", start, { passive: true });
-    box.addEventListener("touchmove", move, { passive: false });
-    box.addEventListener("touchend", end);
-    box.addEventListener("touchcancel", end);
+    const touchEnd = () => { startY = null; };
+    el.addEventListener("wheel", wheel, { passive: false });
+    el.addEventListener("touchstart", touchStart, { passive: true });
+    el.addEventListener("touchmove", touchMove, { passive: false });
+    el.addEventListener("touchend", touchEnd);
+    el.addEventListener("touchcancel", touchEnd);
     return () => {
-      box.removeEventListener("wheel", wheel);
-      box.removeEventListener("touchstart", start);
-      box.removeEventListener("touchmove", move);
-      box.removeEventListener("touchend", end);
-      box.removeEventListener("touchcancel", end);
+      el.removeEventListener("wheel", wheel);
+      el.removeEventListener("touchstart", touchStart);
+      el.removeEventListener("touchmove", touchMove);
+      el.removeEventListener("touchend", touchEnd);
+      el.removeEventListener("touchcancel", touchEnd);
     };
   }, []);
 
-  const partOf = (label: string) => (Object.keys(PART_LABELS) as PartId[]).find((k) => PART_LABELS[k] === label);
-  const current = mappings[index];
-  const currentParts: PartId[] = !current ? [] : current.part === "Whole product" ? MODEL.parts.map((p) => p.id) : ([partOf(current.part)].filter(Boolean) as PartId[]);
-  const seen = new Set<PartId>();
-  // Only individual parts build up; "Whole product" shows the full earbud on its own step only.
-  mappings.slice(0, index).forEach((m) => {
-    const id = m.part === "Whole product" ? undefined : partOf(m.part);
-    if (id) seen.add(id);
-  });
-  const offModel = current && !partOf(current.part); // e.g. "Charging case" or "None": not part of this model
-  const labelAt = currentParts.length === 1 ? currentParts[0] : "shell";
-  const p = MODEL.parts.find((x) => x.id === labelAt)!;
-  const [lx, ly] = [p.o[0] + MODEL.off[labelAt][0] * 0.7 + BADGE_AT[labelAt][0], p.o[1] + MODEL.off[labelAt][1] * 0.7 + BADGE_AT[labelAt][1]];
+  // Scrolling picks the part.
+  const onScroll = () => {
+    const el = scroller.current;
+    if (!el) return;
+    const i = Math.round(el.scrollTop / el.clientHeight);
+    if (i !== shown.current) {
+      shown.current = i;
+      onIndex(i);
+    }
+  };
+  // Picking a part elsewhere (a row in the table) scrolls to it.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || index === shown.current) return;
+    shown.current = index;
+    target.current = index;
+    el.scrollTo({ top: index * el.clientHeight, behavior: "smooth" });
+  }, [index]);
+
+  const go = (i: number) => {
+    const el = scroller.current;
+    if (!el) return;
+    target.current = Math.min(Math.max(i, 0), PART_SLIDES.length - 1);
+    el.scrollTo({ top: target.current * el.clientHeight, behavior: "smooth" });
+  };
+  const slide = PART_SLIDES[index];
+  const used = gestures(slide.label);
 
   return (
-    <div
-      ref={boxRef}
-      className={styles.modelBox}
-      tabIndex={0}
-      role="group"
-      aria-roledescription="part stepper"
-      aria-label={current ? `Step ${index + 1} of ${mappings.length}: ${current.gesture}, ${current.part}. Use the arrow keys to step.` : "No gestures yet"}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); onIndex(Math.min(index + 1, mappings.length - 1)); }
-        if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); onIndex(Math.max(index - 1, 0)); }
-      }}
-    >
-      {current && (
-        <div className={styles.stepCaption}>
-          <span className={styles.stepCount}>{index + 1} / {mappings.length}</span>
-          <span>{current.gesture.toUpperCase()}</span>
-        </div>
-      )}
-      <svg className={styles.diagram} viewBox="-30 -90 600 540">
-        {MODEL.parts.map((part) => {
-          const off = MODEL.off[part.id];
-          const label = PART_LABELS[part.id];
-          const on = currentParts.includes(part.id);
-          const state = on ? "on" : seen.has(part.id) ? "seen" : "hidden";
-          return (
-            <g key={part.id} className={styles.stepPart} data-state={state}
-              style={{ transform: `translate(${off[0] * 0.7}px, ${off[1] * 0.7}px)${state === "hidden" ? " translateY(40px)" : ""}` }}
-              role={state === "hidden" ? undefined : "button"} tabIndex={state === "hidden" ? -1 : 0} aria-label={state === "hidden" ? undefined : `Link ${label}`}
-              onClick={() => state !== "hidden" && onPick(label)}
-              onKeyDown={(e) => { if (state !== "hidden" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onPick(label); } }}>
-              <path d={part.d} fill={on ? "#c8d9ff" : part.tone === "metal" ? "#a4b4cd" : "#e0dce6"} fillRule="evenodd" stroke={on ? "#fff" : "#7f91b6"} strokeWidth={on ? 4 : 2} />
-              <title>{label}</title>
-            </g>
-          );
-        })}
-        {current && !offModel && (
-          <g key={index} className={styles.stepLabel} transform={`translate(${lx} ${ly})`} pointerEvents="none">
-            <circle r="15" fill="#C8D8FF" stroke="rgba(200,216,255,0.3)" strokeWidth="12" paintOrder="stroke" />
-            <text textAnchor="middle" dy="5" fontSize="14" fontWeight="700" fill="#1B2036">{index + 1}</text>
-            <rect x="24" y="-13" width={current.part.length * 8 + 22} height="26" rx="13" fill="rgba(20,24,40,0.88)" />
-            <text x="35" dy="5" fontSize="14" fill="#EEF1F8">{current.part}</text>
-          </g>
-        )}
-      </svg>
-      {offModel && <div className={styles.offModel}>{current.part === "None" ? "No part highlighted for this gesture" : `${current.part} isn’t in this 3D model`}</div>}
-      {mappings.length > 1 && (
-        <div className={styles.stepRail} aria-hidden="true">
-          {mappings.map((_, i) => (
-            <button key={i} type="button" tabIndex={-1} data-on={i === index ? "" : undefined} data-seen={i < index ? "" : undefined} onClick={() => onIndex(i)} />
-          ))}
-        </div>
-      )}
+    <div className={`${styles.card} ${styles.viewer}`}>
+      <div
+        ref={scroller}
+        className={styles.viewerScroll}
+        onScroll={onScroll}
+        tabIndex={0}
+        role="region"
+        aria-roledescription="carousel"
+        aria-label={`Parts. ${slide.label}, ${index + 1} of ${PART_SLIDES.length}. Scroll or use the arrow keys for the next part.`}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); go(index + 1); }
+          if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); go(index - 1); }
+        }}
+      >
+        {PART_SLIDES.map((p, i) => (
+          <div key={p.label} className={styles.slide} aria-hidden={i !== index}>
+            {inContext
+              ? <EarbudParts lit={p.ids} exploded viewBox={CONTEXT_BOX} />
+              : <EarbudParts lit={p.ids} exploded={false} only viewBox={boxFor(p.ids, false, p.ids.length > 1 ? 24 : 14)} />}
+          </div>
+        ))}
+      </div>
+
+      <div className={styles.viewerTop}>
+        <span className={styles.stepCount}>{index + 1} / {PART_SLIDES.length}</span>
+        <button type="button" className={styles.smallPill} aria-pressed={inContext} onClick={onToggleContext}>
+          {inContext ? "VIEW PART" : "VIEW IN CONTEXT"}
+        </button>
+      </div>
+      <div className={styles.viewerBottom}>
+        <span className={styles.viewerName}>{slide.label}</span>
+        <span className={styles.viewerUsed}>
+          {used.length ? used.map((g) => <span key={g} className={styles.usedChip}><GestureIcon gesture={g} />{g}</span>) : <span className={styles.mutedSmall}>No gesture highlights this part yet</span>}
+        </span>
+      </div>
+      <div className={styles.stepRail}>
+        {PART_SLIDES.map((p, i) => (
+          <button key={p.label} type="button" aria-label={`Show ${p.label}`} data-on={i === index ? "" : undefined} onClick={() => go(i)} />
+        ))}
+      </div>
+      {index < PART_SLIDES.length - 1 && <span className={styles.scrollCue} aria-hidden="true"><Arrow dir="down" size={14} /></span>}
     </div>
   );
 }
