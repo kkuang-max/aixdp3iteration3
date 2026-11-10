@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MODEL, TOPICS, type PartId } from "@/lib/product";
 import styles from "./business.module.css";
 
@@ -176,6 +176,11 @@ export default function BusinessPage() {
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
   }, []);
+
+  // Keep the selected gesture visible in the sequence list while stepping through the model.
+  useEffect(() => {
+    if (screen.name === "i-model") document.querySelector(`.${styles.seqItem}[data-active]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeMapping, screen.name]);
 
   useEffect(() => {
     if (!notice) return;
@@ -500,10 +505,8 @@ export default function BusinessPage() {
       <>
         <div className={styles.guide}><h1>INTERACTIONS</h1><p>Each swipe right reveals the next part</p></div>
         <div className={`${styles.card} ${styles.modelCard}`}>
-          <div className={styles.modelBox}>
-            <PartDiagram selected={active?.part ?? null} onPick={assign} badges={config.mappings.map((m, i) => ({ n: i + 1, part: m.part, on: i === idx }))} />
-          </div>
-          <p className={styles.modelHint}>Tap a part on the model to link it to the selected gesture</p>
+          <PartScroller mappings={config.mappings} index={idx} onIndex={setActiveMapping} onPick={assign} />
+          <p className={styles.modelHint}>Scroll or swipe up and down to step through the parts · tap a part to link it</p>
         </div>
         <div className={styles.sequence}>
           {stepper}
@@ -519,6 +522,7 @@ export default function BusinessPage() {
                 {i === idx && (
                   <div className={styles.seqBody}>
                     <div className={styles.seqSelects}>
+                      <Select label="Part" value={m.part} options={PARTS} onChange={(v) => updateMapping(i, { part: v })} />
                       <Select label="Text" value={m.sectionId} options={config.sections.map((s) => ({ value: s.id, label: s.label }))} onChange={(v) => updateMapping(i, { sectionId: v })} />
                       <Select label="Model action" value={m.mode} options={MODES} onChange={(v) => updateMapping(i, { mode: v })} />
                     </div>
@@ -610,5 +614,140 @@ function PartDiagram({ selected, onPick, badges }: { selected: string | null; on
         );
       })}
     </svg>
+  );
+}
+
+// Interactions 2: the model is revealed one gesture at a time. Scrolling down on a trackpad / mouse wheel, or swiping
+// up on a touch screen, steps to the next gesture's part; the other way steps back. Earlier parts stay faintly visible
+// so the model builds up piece by piece; later ones are hidden until their step.
+const WHEEL_STEP = 50; // accumulated wheel delta (px) for one step
+const WHEEL_COOLDOWN_MS = 380; // trackpads keep sending momentum events after a flick: one flick = one step
+const TOUCH_STEP = 36; // finger travel (px, unscaled) for one step
+
+function PartScroller({ mappings, index, onIndex, onPick }: { mappings: Mapping[]; index: number; onIndex: (i: number) => void; onPick: (part: string) => void }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const live = useRef({ index, count: mappings.length, onIndex });
+  useEffect(() => {
+    live.current = { index, count: mappings.length, onIndex };
+  });
+
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    let acc = 0;
+    let lockedUntil = 0;
+    let touchY: number | null = null;
+    const step = (dir: 1 | -1) => {
+      const { index: i, count, onIndex: set } = live.current;
+      const next = Math.min(Math.max(i + dir, 0), count - 1);
+      if (next !== i) set(next);
+    };
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const now = performance.now();
+      if (now < lockedUntil) {
+        lockedUntil = now + WHEEL_COOLDOWN_MS / 2; // still in the same flick's momentum
+        return;
+      }
+      acc += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      if (Math.abs(acc) >= WHEEL_STEP) {
+        step(acc > 0 ? 1 : -1);
+        acc = 0;
+        lockedUntil = now + WHEEL_COOLDOWN_MS;
+      }
+    };
+    const start = (e: TouchEvent) => { touchY = e.touches[0].clientY; };
+    const move = (e: TouchEvent) => {
+      if (touchY === null) return;
+      e.preventDefault();
+      const dy = touchY - e.touches[0].clientY; // finger up → positive → next part
+      if (Math.abs(dy) >= TOUCH_STEP) {
+        step(dy > 0 ? 1 : -1);
+        touchY = e.touches[0].clientY;
+      }
+    };
+    const end = () => { touchY = null; };
+    box.addEventListener("wheel", wheel, { passive: false });
+    box.addEventListener("touchstart", start, { passive: true });
+    box.addEventListener("touchmove", move, { passive: false });
+    box.addEventListener("touchend", end);
+    box.addEventListener("touchcancel", end);
+    return () => {
+      box.removeEventListener("wheel", wheel);
+      box.removeEventListener("touchstart", start);
+      box.removeEventListener("touchmove", move);
+      box.removeEventListener("touchend", end);
+      box.removeEventListener("touchcancel", end);
+    };
+  }, []);
+
+  const partOf = (label: string) => (Object.keys(PART_LABELS) as PartId[]).find((k) => PART_LABELS[k] === label);
+  const current = mappings[index];
+  const currentParts: PartId[] = !current ? [] : current.part === "Whole product" ? MODEL.parts.map((p) => p.id) : ([partOf(current.part)].filter(Boolean) as PartId[]);
+  const seen = new Set<PartId>();
+  // Only individual parts build up; "Whole product" shows the full earbud on its own step only.
+  mappings.slice(0, index).forEach((m) => {
+    const id = m.part === "Whole product" ? undefined : partOf(m.part);
+    if (id) seen.add(id);
+  });
+  const offModel = current && !partOf(current.part); // e.g. "Charging case" or "None": not part of this model
+  const labelAt = currentParts.length === 1 ? currentParts[0] : "shell";
+  const p = MODEL.parts.find((x) => x.id === labelAt)!;
+  const [lx, ly] = [p.o[0] + MODEL.off[labelAt][0] * 0.7 + BADGE_AT[labelAt][0], p.o[1] + MODEL.off[labelAt][1] * 0.7 + BADGE_AT[labelAt][1]];
+
+  return (
+    <div
+      ref={boxRef}
+      className={styles.modelBox}
+      tabIndex={0}
+      role="group"
+      aria-roledescription="part stepper"
+      aria-label={current ? `Step ${index + 1} of ${mappings.length}: ${current.gesture}, ${current.part}. Use the arrow keys to step.` : "No gestures yet"}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); onIndex(Math.min(index + 1, mappings.length - 1)); }
+        if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); onIndex(Math.max(index - 1, 0)); }
+      }}
+    >
+      {current && (
+        <div className={styles.stepCaption}>
+          <span className={styles.stepCount}>{index + 1} / {mappings.length}</span>
+          <span>{current.gesture.toUpperCase()}</span>
+        </div>
+      )}
+      <svg className={styles.diagram} viewBox="-30 -90 600 540">
+        {MODEL.parts.map((part) => {
+          const off = MODEL.off[part.id];
+          const label = PART_LABELS[part.id];
+          const on = currentParts.includes(part.id);
+          const state = on ? "on" : seen.has(part.id) ? "seen" : "hidden";
+          return (
+            <g key={part.id} className={styles.stepPart} data-state={state}
+              style={{ transform: `translate(${off[0] * 0.7}px, ${off[1] * 0.7}px)${state === "hidden" ? " translateY(40px)" : ""}` }}
+              role={state === "hidden" ? undefined : "button"} tabIndex={state === "hidden" ? -1 : 0} aria-label={state === "hidden" ? undefined : `Link ${label}`}
+              onClick={() => state !== "hidden" && onPick(label)}
+              onKeyDown={(e) => { if (state !== "hidden" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onPick(label); } }}>
+              <path d={part.d} fill={on ? "#c8d9ff" : part.tone === "metal" ? "#a4b4cd" : "#e0dce6"} fillRule="evenodd" stroke={on ? "#fff" : "#7f91b6"} strokeWidth={on ? 4 : 2} />
+              <title>{label}</title>
+            </g>
+          );
+        })}
+        {current && !offModel && (
+          <g key={index} className={styles.stepLabel} transform={`translate(${lx} ${ly})`} pointerEvents="none">
+            <circle r="15" fill="#C8D8FF" stroke="rgba(200,216,255,0.3)" strokeWidth="12" paintOrder="stroke" />
+            <text textAnchor="middle" dy="5" fontSize="14" fontWeight="700" fill="#1B2036">{index + 1}</text>
+            <rect x="24" y="-13" width={current.part.length * 8 + 22} height="26" rx="13" fill="rgba(20,24,40,0.88)" />
+            <text x="35" dy="5" fontSize="14" fill="#EEF1F8">{current.part}</text>
+          </g>
+        )}
+      </svg>
+      {offModel && <div className={styles.offModel}>{current.part === "None" ? "No part highlighted for this gesture" : `${current.part} isn’t in this 3D model`}</div>}
+      {mappings.length > 1 && (
+        <div className={styles.stepRail} aria-hidden="true">
+          {mappings.map((_, i) => (
+            <button key={i} type="button" tabIndex={-1} data-on={i === index ? "" : undefined} data-seen={i < index ? "" : undefined} onClick={() => onIndex(i)} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
