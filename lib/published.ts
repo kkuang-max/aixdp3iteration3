@@ -2,6 +2,8 @@
 // Stored twice: in this browser's IndexedDB (instant, same device) and, when the deployment has Vercel Blob set up,
 // on the server via /api/kiosk-config so a kiosk on another device picks it up.
 
+import { loadFile, saveFile } from "./fileStore";
+
 export type PublishedSection = { id: string; title: string; rows: { a: string; b: string }[] };
 export type PublishedMapping = { gesture: string; sectionId: string; part: string; mode: string };
 export type PublishedDemo = {
@@ -11,7 +13,13 @@ export type PublishedDemo = {
   sections: PublishedSection[];
   mappings: PublishedMapping[];
   /** An uploaded 3D model, as pictures: the whole model and each mapped part lit up in it. */
-  model?: { fileName: string; whole: string; parts: Record<string, string> };
+  model?: {
+    fileName: string;
+    whole: string;
+    parts: Record<string, string>;
+    /** The model file for the kiosk's live 3D view. `path` is set when it was uploaded online. */
+    file?: { name: string; path?: string };
+  };
 };
 
 const DB = "playform";
@@ -106,4 +114,45 @@ export async function shrinkImage(dataUrl: string, size = 480): Promise<string> 
   canvas.getContext("2d")!.drawImage(img, 0, 0, size, size);
   const webp = canvas.toDataURL("image/webp", 0.82);
   return webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/png");
+}
+
+/** Publish the model file itself: always into this browser, and online when Vercel Blob is set up. */
+export async function publishModelFile(file: { name: string; type: string; data: ArrayBuffer }): Promise<{ path?: string }> {
+  try {
+    await saveFile("publishedModel", file);
+  } catch {
+    /* storage blocked */
+  }
+  const { upload } = await import("@vercel/blob/client");
+  const blob = new Blob([file.data], { type: file.type || "application/octet-stream" });
+  const safe = file.name.replace(/[^\w.-]+/g, "_");
+  for (const access of ["private", "public"] as const) {
+    try {
+      const result = await upload(`playform/models/${safe}`, blob, {
+        access,
+        handleUploadUrl: "/api/model-upload",
+        multipart: file.data.byteLength > 8 * 1024 * 1024,
+      });
+      return { path: result.pathname };
+    } catch {
+      /* not set up, or the store is the other access type */
+    }
+  }
+  return {};
+}
+
+/** The published model file for the kiosk: from online storage, else this browser's copy. */
+export async function loadPublishedModelFile(demo: PublishedDemo): Promise<{ name: string; data: ArrayBuffer } | null> {
+  const file = demo.model?.file;
+  if (!file) return null;
+  if (file.path) {
+    try {
+      const res = await fetch(`/api/kiosk-model?path=${encodeURIComponent(file.path)}`);
+      if (res.ok) return { name: file.name, data: await res.arrayBuffer() };
+    } catch {
+      /* offline: try the local copy */
+    }
+  }
+  const local = await loadFile("publishedModel");
+  return local && local.name === file.name ? { name: local.name, data: local.data } : null;
 }

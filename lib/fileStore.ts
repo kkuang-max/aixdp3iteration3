@@ -3,6 +3,8 @@
 
 const DB = "playform";
 const STORE = "files";
+/** "publishedModel" is the model file the kiosk shows (a copy, so editing in the portal doesn't change the kiosk). */
+export type FileKey = "model" | "doc" | "publishedModel";
 export type StoredFile = { name: string; type: string; data: ArrayBuffer };
 
 function open(): Promise<IDBDatabase> {
@@ -27,6 +29,6 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
   }
 }
 
-export const saveFile = (key: "model" | "doc", file: StoredFile) => run("readwrite", (s) => s.put(file, key)).then(() => undefined);
-export const loadFile = (key: "model" | "doc") => run<StoredFile | undefined>("readonly", (s) => s.get(key)).catch(() => undefined);
-export const deleteFile = (key: "model" | "doc") => run("readwrite", (s) => s.delete(key)).then(() => undefined).catch(() => undefined);
+export const saveFile = (key: FileKey, file: StoredFile) => run("readwrite", (s) => s.put(file, key)).then(() => undefined);
+export const loadFile = (key: FileKey) => run<StoredFile | undefined>("readonly", (s) => s.get(key)).catch(() => undefined);
+export const deleteFile = (key: FileKey) => run("readwrite", (s) => s.delete(key)).then(() => undefined).catch(() => undefined);

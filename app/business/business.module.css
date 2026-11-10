@@ -93,7 +93,7 @@
   position: absolute;
   left: 80px;
   top: 78px;
-  max-width: 700px;
+  max-width: 840px;
 }
 
 .guide h1 {
@@ -106,8 +106,11 @@
 
 .guide p {
   margin: 4px 0 0;
-  font-size: 20px;
+  font-size: 17px;
   color: #b9c0d3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- Progress ---- */

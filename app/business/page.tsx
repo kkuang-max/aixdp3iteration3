@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { MODEL, TOPICS, type PartId } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
-import { publishDemo, shrinkImage, type PublishedDemo } from "@/lib/published";
+import { publishDemo, publishModelFile, shrinkImage, type PublishedDemo } from "@/lib/published";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -422,6 +422,11 @@ export default function BusinessPage() {
         const parts: Record<string, string> = {};
         for (const p of model.parts) if (used.has(p.name)) parts[p.name] = await shrinkImage(p.context);
         pictures = { fileName: model.fileName, whole: await shrinkImage(model.whole), parts };
+        const stored = await loadFile("model");
+        if (stored) {
+          const { path } = await publishModelFile(stored);
+          pictures.file = { name: stored.name, path };
+        }
       }
       const demo: PublishedDemo = {
         version: 1,

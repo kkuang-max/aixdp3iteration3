@@ -5,6 +5,7 @@ import { MODEL, PRODUCT, TOPICS, type PartId } from "@/lib/product";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import type { PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
+import LiveModel from "./LiveModel";
 import styles from "./kiosk.module.css";
 
 // Hold a hand over anything marked data-dwell for that many ms and it activates (Kiosk.tsx runs it).
@@ -55,13 +56,28 @@ const BadgeIcon = ({ size = 44 }: { size?: number }) => (
 // ---- What the business portal published ------------------------------------------
 /** The demo published from /business, or null to show the built-in Orbit Earbuds content. */
 export const DemoContext = createContext<PublishedDemo | null>(null);
+/** The published model file, once loaded, for the live 3D view. */
+export const ModelFileContext = createContext<{ name: string; data: ArrayBuffer } | null>(null);
 const useProductName = () => useContext(DemoContext)?.productName.toUpperCase() || PRODUCT.name;
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
 function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string }) {
   const demo = useContext(DemoContext);
+  const file = useContext(ModelFileContext);
+  const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
   if (demo?.model) {
-    const part = demo.mappings.find((m) => m.sectionId === props.topicId)?.part;
+    const mapping = demo.mappings.find((m) => m.sectionId === props.topicId);
+    const part = mapping?.part;
+    if (file && failed !== file.data) {
+      return (
+        <>
+          <div className={styles.modelShadow} />
+          <div className={styles.modelPicture}>
+            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mapping?.mode ?? "Highlight"} accent={props.accent} onFail={() => setFailed(file.data)} />
+          </div>
+        </>
+      );
+    }
     const src = (part && demo.model.parts[part]) || demo.model.whole;
     return (
       <>

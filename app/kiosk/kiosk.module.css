@@ -1051,3 +1051,14 @@ video.camVideo {
   object-fit: contain;
   animation: rise 450ms ease-out both;
 }
+
+.liveModel {
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+
+.liveModel[data-ready] {
+  opacity: 1;
+}

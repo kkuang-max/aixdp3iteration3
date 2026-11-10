@@ -11,7 +11,15 @@ export const STEP_EXT = /\.(step|stp)$/i;
 const MAX_PARTS = 24;
 const SIZE = 640; // rendered image size (px)
 
-export async function buildModelParts(fileName: string, data: ArrayBuffer): Promise<LoadedModel> {
+export type ParsedModel = {
+  root: import("three").Object3D;
+  meshes: import("three").Mesh[];
+  parts: { node: import("three").Object3D; meshes: import("three").Mesh[]; name: string }[];
+  truncated: boolean;
+};
+
+/** Parse a model file and split it into parts (the same names the business portal shows). */
+export async function parseModel(fileName: string, data: ArrayBuffer): Promise<ParsedModel> {
   const THREE = await import("three");
   const ext = fileName.toLowerCase().split(".").pop();
 
@@ -86,6 +94,13 @@ export async function buildModelParts(fileName: string, data: ArrayBuffer): Prom
     node.traverse((c) => { if ((c as import("three").Mesh).isMesh) own.push(c as import("three").Mesh); });
     return { node, meshes: own, name: nameOf(node, i) };
   });
+  return { root, meshes, parts, truncated };
+}
+
+export async function buildModelParts(fileName: string, data: ArrayBuffer): Promise<LoadedModel> {
+  const THREE = await import("three");
+  const { root, meshes, parts, truncated } = await parseModel(fileName, data);
+  const box = (o: import("three").Object3D) => new THREE.Box3().setFromObject(o);
 
   // ---- Render ----
   const canvas = document.createElement("canvas");

@@ -7,8 +7,8 @@ import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
-import { Brochure, Contact, DemoContext, Hub, Team } from "./Screens";
-import { loadPublishedDemo, type PublishedDemo } from "@/lib/published";
+import { Brochure, Contact, DemoContext, Hub, ModelFileContext, Team } from "./Screens";
+import { loadPublishedDemo, loadPublishedModelFile, type PublishedDemo } from "@/lib/published";
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
@@ -61,6 +61,7 @@ export default function Kiosk() {
   const [edge, setEdge] = useState<Edge | null>(null);
   const [camAspect, setCamAspect] = useState(16 / 9);
   const [demo, setDemo] = useState<PublishedDemo | null>(null); // what the business portal published
+  const [modelFile, setModelFile] = useState<{ key: string; name: string; data: ArrayBuffer } | null>(null);
 
   // Show what the business portal published; check for a newer version every minute.
   useEffect(() => {
@@ -72,6 +73,19 @@ export default function Kiosk() {
     const id = setInterval(load, 60000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
+
+  // Fetch the published model file for the live 3D view (pictures show until it arrives).
+  const fileKey = demo?.model?.file ? `${demo.model.file.name}|${demo.model.file.path ?? ""}|${demo.publishedAt}` : "";
+  useEffect(() => {
+    if (!fileKey || !demo) return;
+    let cancelled = false;
+    loadPublishedModelFile(demo).then((f) => {
+      if (!cancelled && f) setModelFile({ key: fileKey, ...f });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the published file changes
+  }, [fileKey]);
+  const liveFile = modelFile && modelFile.key === fileKey ? modelFile : null;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -471,6 +485,7 @@ export default function Kiosk() {
   const s = view;
   return (
     <DemoContext.Provider value={demo}>
+    <ModelFileContext.Provider value={liveFile}>
     <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
@@ -572,6 +587,7 @@ export default function Kiosk() {
         </>
       )}
     </div>
+    </ModelFileContext.Provider>
     </DemoContext.Provider>
   );
 }
