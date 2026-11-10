@@ -50,7 +50,7 @@ export default function Kiosk() {
   // On "How it works" and "Specs": the row a visitor is pointing at or swiped to (its part lights up).
   const [activeRow, setActiveRow] = useState<number | null>(null);
   const [modelPart, setModelPart] = useState<string | null>(null); // the part of the model under the pointer
-  const [explode, setExplode] = useState(TOPICS[DEFAULT_TOPIC].explode);
+  const [explode, setExplode] = useState(topicExplode(DEFAULT_TOPIC));
   // The session lives in a ref (time per topic grows every frame); screens get a snapshot of it.
   const [view, setView] = useState<Session>(newSession);
   const [handVisible, setHandVisible] = useState(false);
@@ -459,7 +459,7 @@ export default function Kiosk() {
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
-    let cur = TOPICS[ix.current.topic].explode;
+    let cur = topicExplode(ix.current.topic);
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
@@ -496,7 +496,7 @@ export default function Kiosk() {
         resetVisitor();
       }
 
-      const target = TOPICS[s.topic].explode;
+      const target = topicExplode(s.topic);
       if (cur !== target) {
         cur += (target - cur) * (1 - Math.exp(-dt / 1000 / TAU_EXPLODE));
         if (Math.abs(target - cur) < 0.003) cur = target;
@@ -647,6 +647,11 @@ export default function Kiosk() {
     </ModelFileContext.Provider>
     </DemoContext.Provider>
   );
+}
+
+/** Only How it works and Specs move the model; every other topic shows it whole. */
+function topicExplode(i: number) {
+  return PART_TOPICS.has(TOPICS[i].id) ? TOPICS[i].explode : 0;
 }
 
 function clearDwell(s: { dwellEl: HTMLElement | null; dwellFired: boolean }) {

@@ -66,10 +66,11 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
   if (demo?.model) {
-    const mapping = demo.mappings.find((m) => m.sectionId === props.topicId);
+    // Only How it works and Specs light or move parts; other topics show the whole model turning.
+    const mapping = props.interactive ? demo.mappings.find((m) => m.sectionId === props.topicId) : undefined;
     // A row the visitor points at / swiped to wins over the topic's mapped part.
     const part = props.rowPart ?? mapping?.part;
-    const mode = props.rowPart ? (props.topicId === "how" ? "Explode apart" : "Highlight") : (mapping?.mode ?? "Highlight");
+    const mode = !props.interactive ? "Slow turn" : props.rowPart ? (props.topicId === "how" ? "Explode apart" : "Highlight") : (mapping?.mode ?? "Highlight");
     if (file && failed !== file.data) {
       return (
         <>
@@ -106,6 +107,7 @@ function HandButton(props: { className: string; onClick: () => void; children: R
 
 // ---- Topic hub ---------------------------------------------------------------
 // One stable array per part, so the 3D earbud only rebuilds when the lit part changes.
+const NO_PARTS: PartId[] = [];
 const ONE_PART = Object.fromEntries(MODEL.parts.map((p) => [p.id, [p.id]])) as Record<PartId, PartId[]>;
 
 export function Hub(props: {
@@ -135,7 +137,7 @@ export function Hub(props: {
   // Pointing at a part lights it and every row about it; pointing at (or swiping to) a row lights its part.
   const hoverPart = interactive ? props.modelPart : null;
   const litPart = hoverPart ?? (active ? rowPart(active) : null);
-  const highlight = !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
+  const highlight = !interactive ? NO_PARTS : !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
   return (
     <>
