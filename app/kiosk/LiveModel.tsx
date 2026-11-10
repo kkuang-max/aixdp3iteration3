@@ -9,6 +9,9 @@ import styles from "./kiosk.module.css";
 //   Explode apart → parts pull away from the centre · Put back together → parts return · Zoom in → camera closes on
 //   the part · Slow turn → the model turns all the way round · Highlight → just the light-up.
 
+/** Kiosk asks a live model which part is under a screen point (for hover). */
+export const livePickers = new WeakMap<HTMLCanvasElement, (x: number, y: number) => string | null>();
+
 type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void };
 
 const SIZE = 460; // CSS px, the same box as the sample earbud
@@ -173,9 +176,21 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
         renderer.render(scene, camera);
       };
       raf = requestAnimationFrame(tick);
+      // Which part is under a screen point.
+      const raycaster = new THREE.Raycaster();
+      const partOfMesh = new Map<import("three").Object3D, string>();
+      for (const p of info) for (const m of p.meshes) partOfMesh.set(m, p.name);
+      livePickers.set(canvas, (x, y) => {
+        const r = canvas.getBoundingClientRect();
+        const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+        raycaster.setFromCamera(ndc, camera);
+        const hit = raycaster.intersectObjects(meshes, false)[0];
+        return hit ? (partOfMesh.get(hit.object) ?? null) : null;
+      });
       setReady(true);
 
       cleanup = () => {
+        livePickers.delete(canvas);
         cancelAnimationFrame(raf);
         for (const look of looks.values()) [...look.lit, ...look.dim].forEach((m) => m.dispose());
         root.traverse((o) => {
@@ -192,5 +207,5 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
     };
   }, [name, data, accent]);
 
-  return <canvas ref={canvasRef} className={styles.liveModel} data-ready={ready ? "" : undefined} width={SIZE} height={SIZE} aria-hidden="true" />;
+  return <canvas ref={canvasRef} className={styles.liveModel} data-ready={ready ? "" : undefined} data-live-model="" width={SIZE} height={SIZE} aria-hidden="true" />;
 }

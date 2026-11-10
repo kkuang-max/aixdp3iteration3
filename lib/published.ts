@@ -175,6 +175,8 @@ export function matchPart(rowName: string, partNames: string[]): string | null {
     else {
       const words = new Set(row.split(" ").filter((w) => w.length >= 3));
       for (const w of n.split(" ")) if (words.has(w) || (w.length >= 4 && [...words].some((x) => x.startsWith(w) || w.startsWith(x)))) score += 10;
+      // Joined names like "ToyCar" or "MicArray": a row word inside the part name still counts.
+      if (!score) for (const w of words) if (w.length >= 3 && n.replace(/ /g, "").includes(w)) score += 5;
     }
     if (score > bestScore) { best = name; bestScore = score; }
   }

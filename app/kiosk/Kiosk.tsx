@@ -8,6 +8,7 @@ import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
 import { Brochure, Contact, DemoContext, Hub, ModelFileContext, Team } from "./Screens";
+import { livePickers } from "./LiveModel";
 import { loadPublishedDemo, loadPublishedModelFile, type PublishedDemo } from "@/lib/published";
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
@@ -48,6 +49,7 @@ export default function Kiosk() {
   const [present, setPresent] = useState(false); // someone is using the kiosk (else attract loop)
   // On "How it works" and "Specs": the row a visitor is pointing at or swiped to (its part lights up).
   const [activeRow, setActiveRow] = useState<number | null>(null);
+  const [modelPart, setModelPart] = useState<string | null>(null); // the part of the model under the pointer
   const [explode, setExplode] = useState(TOPICS[DEFAULT_TOPIC].explode);
   // The session lives in a ref (time per topic grows every frame); screens get a snapshot of it.
   const [view, setView] = useState<Session>(newSession);
@@ -118,6 +120,7 @@ export default function Kiosk() {
     dwellHit: 0,
     dwellFired: false,
     activeRow: null as number | null,
+    modelPart: null as string | null,
     rowFromHover: false,
     edge: null as Edge | null,
     edgeSince: 0,
@@ -245,6 +248,14 @@ export default function Kiosk() {
     cursor?.toggleAttribute("data-over", !!target);
     cursor?.toggleAttribute("data-dwelling", !!target && !s.dwellFired);
 
+    // A part of the model under the pointer (sample earbud slices, or the uploaded model's 3D view).
+    let part: string | null = hit?.closest("[data-model-part]")?.getAttribute("data-model-part") ?? null;
+    if (!part && hit instanceof HTMLCanvasElement && hit.hasAttribute("data-live-model")) part = livePickers.get(hit)?.(x, y) ?? null;
+    if (part !== s.modelPart) {
+      s.modelPart = part;
+      setModelPart(part);
+    }
+
     const rowEl = hit?.closest("[data-row]");
     const row = rowEl ? Number(rowEl.getAttribute("data-row")) : null;
     if (row !== null ? row !== s.activeRow : s.rowFromHover && s.activeRow !== null) {
@@ -262,6 +273,10 @@ export default function Kiosk() {
     if (s.rowFromHover && s.activeRow !== null) {
       s.activeRow = null;
       setActiveRow(null);
+    }
+    if (s.modelPart) {
+      s.modelPart = null;
+      setModelPart(null);
     }
   }, []);
 
@@ -380,7 +395,12 @@ export default function Kiosk() {
       if (ix.current.hasPos || e.pointerType === "touch") return; // a tracked hand takes priority
       pointAt(e.clientX, e.clientY, "mouse", now);
     };
-    const down = () => markPresent(performance.now());
+    const down = (e: PointerEvent) => {
+      const now = performance.now();
+      markPresent(now);
+      // Taps: pick the row or model part under the finger (touch has no hover).
+      if (e.pointerType === "touch") pointAt(e.clientX, e.clientY, "mouse", now);
+    };
     // Staff shortcuts are chords on C (held) so a visitor can't trigger them by accident:
     // C + Space camera on/off · C + Option/Alt + Space camera view · C + S swipe mode.
     const held = new Set<string>();
@@ -512,10 +532,10 @@ export default function Kiosk() {
   const rowGuide = !partTopic
     ? guide
     : !camOk
-      ? { title: "TOUCH OR HOVER OVER A ROW", sub: "It lights up that part on the model" }
+      ? { title: "TOUCH OR HOVER OVER A PART", sub: "On the model or in the list: the other lights up too" }
       : swipeMode
         ? { title: handVisible ? "SWIPE UP OR DOWN THROUGH THE PARTS" : "RAISE A HAND, THEN SWIPE", sub: "Swipe left or right for another topic" }
-        : { title: "HOLD YOUR HAND OVER A ROW", sub: "It lights up that part · or pick another topic" };
+        : { title: "POINT AT A PART OR A ROW", sub: "The matching part and details light up" };
 
   const s = view;
   return (
@@ -530,6 +550,7 @@ export default function Kiosk() {
             topic={topic}
             onPick={(i) => pickTopic(i)}
             activeRow={activeRow}
+            modelPart={modelPart}
             onRow={(i) => { ix.current.activeRow = i; ix.current.rowFromHover = false; setActiveRow(i); }}
             explode={explode}
             accent={ACCENT}

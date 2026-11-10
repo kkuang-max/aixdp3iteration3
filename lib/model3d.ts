@@ -23,7 +23,7 @@ export type ModelGeometry<Id extends string> = {
   off: Record<Id, [number, number]>; // where each part moves when fully exploded
 };
 
-export type ModelPath = { key: string; d: string; tf: string; fill: string; stroke: string; sw: number; op: number };
+export type ModelPath = { key: string; part: string; d: string; tf: string; fill: string; stroke: string; sw: number; op: number };
 export type ModelSlice = { z: string; paths: ModelPath[] };
 
 const TONES: Record<Tone, [string, string]> = {
@@ -71,7 +71,7 @@ export function buildModel<Id extends string>(o: {
       const c = on ? mix(shade, o.accent, front ? 0.45 : 0.6) : shade;
       const op = !on && o.highlight.length ? 0.38 : 1;
       let n = 0;
-      const push = (x: Omit<ModelPath, "key" | "d" | "tf"> & { tf?: string }) => paths.push({ d: p.d, tf, ...x, key: `${p.id}-${n++}` });
+      const push = (x: Omit<ModelPath, "key" | "d" | "tf" | "part"> & { tf?: string }) => paths.push({ d: p.d, tf, ...x, part: p.id, key: `${p.id}-${n++}` });
       if (on && front) {
         push({ fill: "none", stroke: o.accent, sw: 26, op: 0.18 });
         push({ fill: "none", stroke: o.accent, sw: 12, op: 0.5 });

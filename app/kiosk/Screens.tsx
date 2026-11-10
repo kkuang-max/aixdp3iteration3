@@ -61,7 +61,7 @@ export const ModelFileContext = createContext<{ name: string; data: ArrayBuffer 
 const useProductName = () => useContext(DemoContext)?.productName.toUpperCase() || PRODUCT.name;
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
@@ -91,7 +91,7 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
       </>
     );
   }
-  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} />;
+  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} />;
 }
 
 /** A button a hand can hold over to press: shows a filling bar while the hand dwells. */
@@ -112,6 +112,7 @@ export function Hub(props: {
   topic: number;
   onPick: (i: number) => void;
   activeRow: number | null;
+  modelPart: string | null; // the part of the model under the pointer
   onRow: (i: number) => void;
   explode: number;
   accent: string;
@@ -130,9 +131,12 @@ export function Hub(props: {
   const active = interactive && props.activeRow !== null ? t.rows[props.activeRow] : undefined;
   // Sample earbud: the row's part. Uploaded model: the part whose name matches the row.
   const partNames = demo?.model ? (demo.model.partNames ?? Object.keys(demo.model.parts)) : [];
-  const rowPart = (r: { a: string }) => (demo?.model ? matchPart(r.a, partNames) : null);
-  const activePart = active?.part ?? null;
-  const highlight = activePart ? ONE_PART[activePart] : base.highlight;
+  const rowPart = (r: { a: string; part?: PartId }): string | null => (demo?.model ? matchPart(r.a, partNames) : (r.part ?? null));
+  // Pointing at a part lights it and every row about it; pointing at (or swiping to) a row lights its part.
+  const hoverPart = interactive ? props.modelPart : null;
+  const litPart = hoverPart ?? (active ? rowPart(active) : null);
+  const highlight = !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
+  const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
   return (
     <>
       <div className={styles.eyebrow}>
@@ -171,7 +175,7 @@ export function Hub(props: {
         })}
       </nav>
 
-      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={active ? rowPart(active) : null} />
+      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} />
 
       <section key={t.id} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>
@@ -184,7 +188,7 @@ export function Hub(props: {
               key={`${i}-${r.a}`}
               className={styles.row}
               data-row={interactive ? i : undefined}
-              data-active={interactive && i === props.activeRow ? "" : undefined}
+              data-active={rowLit(r, i) ? "" : undefined}
               onClick={interactive ? () => props.onRow(i) : undefined}
             >
               <span className={styles.rowA}>{r.a}</span>

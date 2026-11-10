@@ -1095,3 +1095,13 @@ video.camVideo {
 .row[data-active] .rowB {
   color: #d6dae6;
 }
+
+/* How it works / Specs: parts of the model can be pointed at. */
+.modelWrap[data-interactive] .slice path {
+  pointer-events: visiblePainted;
+  cursor: pointer;
+}
+
+.modelPicture:has([data-live-model][data-ready]) {
+  pointer-events: auto;
+}
