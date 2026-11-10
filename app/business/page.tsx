@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { MODEL, TOPICS, type PartId } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
+import { publishDemo, shrinkImage, type PublishedDemo } from "@/lib/published";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -161,6 +162,74 @@ function Foot({ back, next }: { back?: { label: string; onClick: () => void }; n
   );
 }
 
+// ---- Overflow: "… More" opens the full text in a modal ------------------------------------
+type MoreItem = { title: string; content: ReactNode };
+const MoreContext = createContext<(item: MoreItem) => void>(() => {});
+
+/** Shows as much as fits; when the content is taller than the box it fades out and offers "… More". */
+function Clamp({ title, children, full, className }: { title: string; children: ReactNode; full?: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
+  const openMore = useContext(MoreContext);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setOver(el.scrollHeight > el.clientHeight + 2));
+    ro.observe(el);
+    Array.from(el.children).forEach((c) => ro.observe(c));
+    return () => ro.disconnect();
+  });
+  return (
+    <div className={`${styles.clamp} ${className ?? ""}`} data-over={over ? "" : undefined}>
+      <div ref={ref} className={styles.clampInner}>{children}</div>
+      {over && (
+        <button type="button" className={styles.moreBtn} onClick={() => openMore({ title, content: full ?? children })}>
+          … More
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose, actions }: { title: string; children: ReactNode; onClose: () => void; actions?: ReactNode }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  return (
+    <div className={styles.modalBackdrop} onClick={onClose}>
+      <div className={styles.modal} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.modalHead}>
+          <h2>{title}</h2>
+          <button type="button" className={styles.modalClose} onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className={styles.modalBody}>{children}</div>
+        {actions && <div className={styles.modalActions}>{actions}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** A section in full, for the modal. */
+function SectionFull({ section }: { section: Section }) {
+  return (
+    <div className={styles.fullSection}>
+      <p className={styles.fullTitle}>{section.title}</p>
+      {section.rows.map((r, i) => (
+        <div key={i} className={styles.fullRow}><b>{r.a || "—"}</b>{r.b && <span>{r.b}</span>}</div>
+      ))}
+      {(section.source || section.quote) && (
+        <div className={styles.fullSource}>
+          {section.source && <span className={styles.kicker}>FROM YOUR PRD · {section.source.toUpperCase()}</span>}
+          {section.quote && <blockquote className={styles.quote}>“{section.quote}”</blockquote>}
+        </div>
+      )}
+      {section.needsReview && section.reviewNote && <p className={styles.fullNote}>Needs a look: {section.reviewNote}</p>}
+    </div>
+  );
+}
+
 // ---- Page --------------------------------------------------------------------------
 export default function BusinessPage() {
   const [config, setConfig] = useState<BusinessConfig>(defaultConfig);
@@ -176,6 +245,8 @@ export default function BusinessPage() {
   const [docFile, setDocFile] = useState<File | null>(null); // the product doc, kept for the AI
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [more, setMore] = useState<MoreItem | null>(null); // "… More" modal
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   // Uploaded files live in this browser (IndexedDB): bring them back after a refresh.
   useEffect(() => {
@@ -284,6 +355,23 @@ export default function BusinessPage() {
     await deleteFile("model");
   };
 
+  // Start over: clear every section, gesture and uploaded file.
+  const restart = async () => {
+    setConfirmRestart(false);
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* nothing saved */ }
+    await Promise.all([deleteFile("model"), deleteFile("doc")]);
+    setConfig(defaultConfig);
+    setModel(null);
+    setDocFile(null);
+    setAiError("");
+    setPartIndex(0);
+    setInContext(false);
+    setEditingPreview(false);
+    setMode("auto");
+    setScreen({ name: "a-upload" });
+    setNotice("Cleared. Starting fresh.");
+  };
+
   // Ask the AI (server route) to draft the sections and gestures from the product doc.
   const buildWithAI = async () => {
     if (!docFile) {
@@ -322,15 +410,35 @@ export default function BusinessPage() {
     setScreen(m === "auto" ? { name: "a-upload" } : { name: "m-model" });
   };
   const go = (s: Screen) => { setEditingPreview(false); setScreen(s); };
-  const finish = () => {
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "playform-product-config.json";
-    a.click();
-    URL.revokeObjectURL(url);
-    setNotice("Draft saved and configuration downloaded. The kiosk doesn't read it yet.");
+  // Publish: the kiosk shows these sections, gestures and model pictures from now on.
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState<{ server: boolean; note?: string; at: string } | null>(null);
+  const finish = async () => {
+    setPublishing(true);
+    try {
+      let pictures: PublishedDemo["model"];
+      if (model) {
+        const used = new Set(config.mappings.map((m) => m.part));
+        const parts: Record<string, string> = {};
+        for (const p of model.parts) if (used.has(p.name)) parts[p.name] = await shrinkImage(p.context);
+        pictures = { fileName: model.fileName, whole: await shrinkImage(model.whole), parts };
+      }
+      const demo: PublishedDemo = {
+        version: 1,
+        publishedAt: new Date().toISOString(),
+        productName: config.productName,
+        sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows })),
+        mappings: config.mappings,
+        model: pictures,
+      };
+      const result = await publishDemo(demo);
+      if (!result.local && !result.server) { setNotice("Couldn't publish: storage is blocked in this browser."); return; }
+      setPublished({ server: result.server, note: result.serverNote, at: demo.publishedAt });
+    } catch {
+      setNotice("Couldn't publish. Try again.");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   // Progress steps for the current flow.
@@ -430,11 +538,13 @@ export default function BusinessPage() {
         source: `From ${s.source ?? AUTO_META[s.id]?.source ?? "PRD"}`,
         look: !!s.needsReview || s.rows.length < 3 || s.rows.some((r) => !r.a.trim()),
         onEdit: () => go({ name: "a-edit", id: s.id }),
+        full: <SectionFull section={s} /> as ReactNode,
       })),
       {
         key: "interactions", label: "INTERACTIONS", title: `${config.mappings.length} gestures mapped`,
         body: "Swipe right steps through the parts. Swipe left goes back.", source: "From 3D model",
         look: config.mappings.length === 0, onEdit: () => go({ name: "i-list" }),
+        full: undefined as ReactNode,
       },
     ];
     const needLook = cards.filter((c) => c.look).length;
@@ -446,9 +556,11 @@ export default function BusinessPage() {
           {cards.map((c) => (
             <div key={c.key} className={styles.reviewCard} data-look={c.look ? "" : undefined}>
               <div className={styles.reviewHead}><b>{c.label}</b><span className={c.look ? styles.badgeLook : styles.badgeReady}>{c.look ? "Needs a look" : "Ready"}</span></div>
-              <div className={styles.reviewTitle}>{c.title}</div>
-              <div className={styles.reviewBody}>{c.body}</div>
-              <div className={styles.reviewFoot}><span>{c.source}</span><button type="button" className={styles.smallPill} onClick={c.onEdit}>EDIT</button></div>
+              <Clamp className={styles.reviewClamp} title={c.label} full={c.full}>
+                <div className={styles.reviewTitle}>{c.title}</div>
+                <div className={styles.reviewBody}>{c.body}</div>
+              </Clamp>
+              <div className={styles.reviewFoot}><span className={styles.oneLine} title={c.source}>{c.source}</span><button type="button" className={styles.smallPill} onClick={c.onEdit}>EDIT</button></div>
             </div>
           ))}
         </div>
@@ -494,13 +606,17 @@ export default function BusinessPage() {
           </div>
         </div>
         <div className={`${styles.card} ${styles.quoteCard}`}>
-          <div className={styles.kicker}>FROM YOUR PRD · {(s.source ?? meta?.source ?? "").replace("PRD ", "").toUpperCase()}</div>
-          <blockquote className={styles.quote}>“{s.quote ?? meta?.quote}”</blockquote>
-          <span className={styles.mutedSmall}>{s.needsReview && s.reviewNote ? `Needs a look: ${s.reviewNote}` : s.quote ? "From your document" : "Sample excerpt"}</span>
+          <div className={`${styles.kicker} ${styles.oneLine}`} title={s.source ?? meta?.source}>FROM YOUR PRD · {(s.source ?? meta?.source ?? "").replace("PRD ", "").toUpperCase()}</div>
+          <Clamp className={styles.fill} title={`From your PRD · ${s.source ?? meta?.source ?? ""}`}>
+            <blockquote className={styles.quote}>“{s.quote ?? meta?.quote}”</blockquote>
+            <span className={styles.mutedSmall}>{s.needsReview && s.reviewNote ? `Needs a look: ${s.reviewNote}` : s.quote ? "From your document" : "Sample excerpt"}</span>
+          </Clamp>
         </div>
         <div className={`${styles.card} ${styles.kioskCard}`}>
           <div className={styles.kicker} style={{ color: "#c8d8ff" }}>ON THE KIOSK</div>
-          <KioskPreview section={s} small />
+          <Clamp className={styles.fill} title={`On the kiosk · ${s.label}`} full={<SectionFull section={s} />}>
+            <KioskPreview section={s} small />
+          </Clamp>
         </div>
         <Foot back={{ label: "ALL SECTIONS", onClick: () => go({ name: "a-review" }) }} next={
           <button type="button" className={styles.outlineBtn} onClick={() => { setNotice("Section saved."); go({ name: "a-review" }); }}>SAVE SECTION</button>
@@ -572,8 +688,8 @@ export default function BusinessPage() {
                 <button type="button" className={styles.smallPill} aria-pressed={editingPreview} onClick={() => setEditingPreview((v) => !v)}>{editingPreview ? "DONE" : "EDIT"}</button>
               </span>
             </div>
-            <div className={styles.previewBox}>
-              {editingPreview ? (
+            {editingPreview ? (
+              <div className={styles.previewBox}>
                 <div className={styles.previewEdit}>
                   <input className={styles.field} aria-label="Headline" value={s.title} onChange={(e) => updateSection(s.id, (x) => ({ ...x, title: e.target.value }))} />
                   {s.rows.map((r, i) => (
@@ -584,10 +700,12 @@ export default function BusinessPage() {
                   ))}
                   <button type="button" className={styles.dashedBtn} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }] }))}>+ ADD ROW</button>
                 </div>
-              ) : (
+              </div>
+            ) : (
+              <Clamp className={styles.fill} title={`AI preview · ${s.label}`} full={<SectionFull section={s} />}>
                 <KioskPreview section={{ ...s, label: `${String(screen.index + 1).padStart(2, "0")} · ${s.label}` }} />
-              )}
-            </div>
+              </Clamp>
+            )}
             <div className={styles.mutedSmall}>Format: {meta?.format}</div>
           </div>
         </div>
@@ -647,25 +765,60 @@ export default function BusinessPage() {
         </div>
         <Foot back={{ label: "BACK", onClick: backFromGestures }} next={<>
           <a className={styles.outlineBtnDim} href="/" target="_blank" rel="noopener noreferrer">TRY IT</a>
-          <button type="button" className={styles.outlineBtn} onClick={finish}>FINISH <Arrow /></button>
+          <button type="button" className={styles.outlineBtn} onClick={finish} disabled={publishing}>{publishing ? "PUBLISHING…" : "PUBLISH TO KIOSK"} <Arrow /></button>
         </>} />
       </>
     );
   }
 
   return (
+    <MoreContext.Provider value={setMore}>
     <main className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
         <div className={styles.eyebrow}>{config.productName.toUpperCase()} / SET UP YOUR DEMO</div>
+        <button type="button" className={styles.restartBtn} onClick={() => setConfirmRestart(true)}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+          RESTART
+        </button>
         <div className={styles.modeSwitch} role="tablist" aria-label="Setup mode">
           <button type="button" role="tab" aria-selected={mode === "auto"} onClick={() => switchMode("auto")}>AUTO</button>
           <button type="button" role="tab" aria-selected={mode === "manual"} onClick={() => switchMode("manual")}>MANUAL</button>
         </div>
         {body}
         {notice && <div role="status" className={styles.toast}>{notice}</div>}
+        {more && <Modal title={more.title} onClose={() => setMore(null)}>{more.content}</Modal>}
+        {published && (
+          <Modal
+            title="Published to the kiosk"
+            onClose={() => setPublished(null)}
+            actions={<>
+              <button type="button" className={styles.outlineBtnDim} onClick={() => setPublished(null)}>KEEP EDITING</button>
+              <a className={styles.outlineBtn} href="/" target="_blank" rel="noopener noreferrer">OPEN THE KIOSK <Arrow /></a>
+            </>}
+          >
+            <p className={styles.modalText}>
+              {published.server
+                ? "The kiosk now shows your sections, gestures and model on any device that opens this site. Kiosks that are already open pick it up within a minute."
+                : `Saved in this browser: a kiosk opened in this same browser shows it now. It isn’t online yet, so kiosks on other devices still show the previous demo. Reason: ${published.note}.`}
+            </p>
+          </Modal>
+        )}
+        {confirmRestart && (
+          <Modal
+            title="Start over?"
+            onClose={() => setConfirmRestart(false)}
+            actions={<>
+              <button type="button" className={styles.outlineBtnDim} onClick={() => setConfirmRestart(false)}>CANCEL</button>
+              <button type="button" className={styles.dangerBtn} onClick={restart}>CLEAR EVERYTHING</button>
+            </>}
+          >
+            <p className={styles.modalText}>This clears every section, gesture and setting, and removes the uploaded product doc and 3D model from this browser. It can’t be undone. The kiosk keeps showing what you last published until you publish again.</p>
+          </Modal>
+        )}
       </div>
     </main>
+    </MoreContext.Provider>
   );
 }
 

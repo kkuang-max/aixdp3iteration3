@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MODEL, PRODUCT, TOPICS, type PartId } from "@/lib/product";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
+import type { PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
 import styles from "./kiosk.module.css";
 
@@ -51,6 +52,30 @@ const BadgeIcon = ({ size = 44 }: { size?: number }) => (
   <img src="/icons/badge.svg" width={size} height={size} alt="" aria-hidden="true" />
 );
 
+// ---- What the business portal published ------------------------------------------
+/** The demo published from /business, or null to show the built-in Orbit Earbuds content. */
+export const DemoContext = createContext<PublishedDemo | null>(null);
+const useProductName = () => useContext(DemoContext)?.productName.toUpperCase() || PRODUCT.name;
+
+/** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string }) {
+  const demo = useContext(DemoContext);
+  if (demo?.model) {
+    const part = demo.mappings.find((m) => m.sectionId === props.topicId)?.part;
+    const src = (part && demo.model.parts[part]) || demo.model.whole;
+    return (
+      <>
+        <div className={styles.modelShadow} />
+        <div className={styles.modelPicture} aria-hidden="true">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img key={src} src={src} alt="" />
+        </div>
+      </>
+    );
+  }
+  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} />;
+}
+
 /** A button a hand can hold over to press: shows a filling bar while the hand dwells. */
 function HandButton(props: { className: string; onClick: () => void; children: ReactNode; ms?: number; label?: string }) {
   return (
@@ -74,13 +99,17 @@ export function Hub(props: {
   onBrochure: () => void;
   onContact: () => void;
 }) {
-  const t = TOPICS[props.topic];
+  const demo = useContext(DemoContext);
+  const productName = useProductName();
+  const base = TOPICS[props.topic];
+  const published = demo?.sections.find((x) => x.id === base.id);
+  const t = published ? { ...base, title: published.title, rows: published.rows.map((r) => ({ a: r.a, b: r.b, part: undefined as PartId | undefined })) } : base;
   const { hoverPart } = props;
-  const highlight = useMemo(() => (hoverPart ? [hoverPart] : t.highlight), [hoverPart, t]);
+  const highlight = useMemo(() => (hoverPart ? [hoverPart] : base.highlight), [hoverPart, base]);
   return (
     <>
       <div className={styles.eyebrow}>
-        {PRODUCT.name} / {PRODUCT.brand} · {PRODUCT.booth}
+        {productName} / {PRODUCT.brand} · {PRODUCT.booth}
       </div>
       <HandButton className={styles.teamLink} onClick={props.onTeam}>
         <TeamIcon />
@@ -115,7 +144,7 @@ export function Hub(props: {
         })}
       </nav>
 
-      <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={highlight} />
+      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} />
 
       <section key={t.id} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>
@@ -188,9 +217,15 @@ function BackLink({ onBack }: { onBack: () => void }) {
 
 /** The exploded earbud on the left of the team / brochure screens. */
 function SideModel({ accent }: { accent: string }) {
+  const demo = useContext(DemoContext);
   return (
     <div className={styles.sideModel} aria-hidden="true">
-      <Model3D geo={MODEL} accent={accent} explode={1} highlight={[]} />
+      {demo?.model ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <div className={styles.modelPicture}><img src={demo.model.whole} alt="" /></div>
+      ) : (
+        <Model3D geo={MODEL} accent={accent} explode={1} highlight={[]} />
+      )}
     </div>
   );
 }
@@ -320,11 +355,12 @@ function Confirmation(props: { title: string; body: string; onDone: () => void; 
 
 // ---- Talk to our team now ------------------------------------------------------------
 export function Team(props: SendProps & { accent: string }) {
+  const productName = useProductName();
   const [done, setDone] = useState(false);
   if (done) {
     return (
       <Confirmation
-        eyebrow={`${PRODUCT.name} / ASK OUR TEAM`}
+        eyebrow={`${productName} / ASK OUR TEAM`}
         title="YOUR SPOT IS SAVED"
         body="Feel free to keep looking around. You have been emailed a ticket number and wait time to return."
         onDone={props.onBack}
@@ -338,7 +374,7 @@ export function Team(props: SendProps & { accent: string }) {
   };
   return (
     <>
-      <div className={styles.eyebrow}>{PRODUCT.name} / ASK OUR TEAM</div>
+      <div className={styles.eyebrow}>{productName} / ASK OUR TEAM</div>
       <BackLink onBack={props.onBack} />
       <SideModel accent={props.accent} />
       <div className={styles.sendColumn}>
@@ -352,13 +388,14 @@ export function Team(props: SendProps & { accent: string }) {
 
 // ---- Get the digital brochure -------------------------------------------------------
 export function Brochure(props: SendProps & { accent: string }) {
+  const productName = useProductName();
   const [done, setDone] = useState<LeadMethod | null>(null);
   const [phone, setPhone] = useState(false);
   if (done) {
     const to = done === "email" ? props.session.email : "the email on your badge";
     return (
       <Confirmation
-        eyebrow={`${PRODUCT.name} / DIGITAL BROCHURE`}
+        eyebrow={`${productName} / DIGITAL BROCHURE`}
         title="THE BROCHURE IS ON ITS WAY"
         body={`We’ll send it to ${to}, with the topics you explored.`}
         onDone={props.onBack}
@@ -372,7 +409,7 @@ export function Brochure(props: SendProps & { accent: string }) {
   };
   return (
     <>
-      <div className={styles.eyebrow}>{PRODUCT.name} / DIGITAL BROCHURE</div>
+      <div className={styles.eyebrow}>{productName} / DIGITAL BROCHURE</div>
       <BackLink onBack={props.onBack} />
       <button type="button" className={styles.qrCard} data-dwell={DWELL_BUTTON_MS} data-selected={phone ? "" : undefined} onClick={() => { setPhone(true); props.onSent("phone", "brochure"); }}>
         <span className={styles.qr}>[QR]</span>
@@ -393,6 +430,7 @@ export function Brochure(props: SendProps & { accent: string }) {
 
 // ---- Leave contact info for later -----------------------------------------------------
 export function Contact(props: SendProps & { accent: string; onBrochure: () => void }) {
+  const productName = useProductName();
   const [done, setDone] = useState(false);
   const [scanning, setScanning] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -400,7 +438,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
   if (done) {
     return (
       <Confirmation
-        eyebrow={`${PRODUCT.name} / LEAVE CONTACT INFO`}
+        eyebrow={`${productName} / LEAVE CONTACT INFO`}
         title="THANKS, WE’LL BE IN TOUCH"
         body="Someone from our team will reach out to you soon."
         onDone={props.onBack}
@@ -419,7 +457,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
   };
   return (
     <>
-      <div className={styles.eyebrow}>{PRODUCT.name} / LEAVE CONTACT INFO</div>
+      <div className={styles.eyebrow}>{productName} / LEAVE CONTACT INFO</div>
       <BackLink onBack={props.onBack} />
       <div className={styles.contactIntro}>
         <span className={styles.contactTitle}>LET US CONTACT YOU</span>

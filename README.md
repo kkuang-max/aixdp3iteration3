@@ -121,6 +121,21 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
   It needs an Anthropic API key on the server: add `ANTHROPIC_API_KEY` in Vercel → Project → Settings → Environment
   Variables (or `.env.local` for `npm run dev`) and redeploy. Without it the page says so and offers the sample content.
 
+## Publishing to the kiosk
+
+**Publish to kiosk** (last step of the business portal) saves the sections, gesture mappings, product name and pictures
+of the uploaded model (the whole model, and each mapped part lit up). The kiosk loads it on start and checks again every
+minute: topic text and the product name come from it, and with an uploaded model the middle of the hub shows the
+picture of the part mapped to that topic.
+
+- **Same browser:** always saved in this browser (IndexedDB), so a kiosk opened in the same browser shows it at once.
+- **Other devices:** connect a Vercel Blob store (Vercel → Project → Storage → Create → Blob → connect to the project;
+  this adds `BLOB_READ_WRITE_TOKEN`) and redeploy. The demo is then saved through `/api/kiosk-config` and every kiosk
+  picks it up.
+
+**Restart** (top right of the business portal) clears every section, gesture and uploaded file in that browser. The
+kiosk keeps the last published demo until you publish again.
+
 ## Code map
 
 - `lib/product.ts` — product name, the five topics and their copy, the earbud's parts, staff placeholders. Swap this to
@@ -132,6 +147,7 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
 - `app/kiosk/Kiosk.tsx` — screens, pointing and hold-to-press, swipes, attract loop, session reset, staff shortcuts.
 - `lib/modelParts.ts` — reads an uploaded 3D model, splits it into parts and renders each one. `lib/fileStore.ts` keeps
   uploads in the browser.
+- `lib/published.ts` + `app/api/kiosk-config/route.ts` — the published demo (browser copy + Vercel Blob).
 - `app/api/build-demo/route.ts` — the AI route (Claude reads the product doc and drafts the demo).
 - `app/business/page.tsx` — business portal (`/business`): auto setup (default) or manual setup, then gesture mapping.
   Timing constants are at the top.

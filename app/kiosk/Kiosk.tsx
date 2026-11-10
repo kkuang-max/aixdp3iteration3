@@ -7,7 +7,8 @@ import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
-import { Brochure, Contact, Hub, Team } from "./Screens";
+import { Brochure, Contact, DemoContext, Hub, Team } from "./Screens";
+import { loadPublishedDemo, type PublishedDemo } from "@/lib/published";
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
@@ -59,6 +60,18 @@ export default function Kiosk() {
   const [debug, setDebug] = useState<string | null>(null); // 'd': tracking rate and last swipe
   const [edge, setEdge] = useState<Edge | null>(null);
   const [camAspect, setCamAspect] = useState(16 / 9);
+  const [demo, setDemo] = useState<PublishedDemo | null>(null); // what the business portal published
+
+  // Show what the business portal published; check for a newer version every minute.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => loadPublishedDemo().then((d) => {
+      if (!cancelled) setDemo((prev) => (d && prev?.publishedAt === d.publishedAt ? prev : d));
+    });
+    load();
+    const id = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -457,6 +470,7 @@ export default function Kiosk() {
 
   const s = view;
   return (
+    <DemoContext.Provider value={demo}>
     <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
@@ -558,6 +572,7 @@ export default function Kiosk() {
         </>
       )}
     </div>
+    </DemoContext.Provider>
   );
 }
 

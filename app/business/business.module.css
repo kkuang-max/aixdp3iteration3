@@ -632,10 +632,6 @@
   font-size: 14px;
   line-height: 1.45;
   color: #c9cfdd;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .reviewFoot {
@@ -1419,4 +1415,260 @@
   font-size: 16px;
   line-height: 1.5;
   color: #c9cfdd;
+}
+
+/* ---- Overflow clamp + "… More" modal ---- */
+.clamp {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.clamp {
+  display: flex;
+  flex-direction: column;
+}
+
+.clampInner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+.clamp[data-over] .clampInner {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 46px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 46px), transparent);
+}
+
+/* Inside a clamp the kiosk preview grows to its full height so the clamp can see it overflow. */
+.clampInner > .kioskPreviewSmall {
+  flex: none;
+  overflow: visible;
+}
+
+.moreBtn {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 2px;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid rgba(200, 216, 255, 0.55);
+  border-radius: 13px;
+  background: #1f2640;
+  color: #c8d8ff !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.moreBtn:hover {
+  background: #2a3354;
+}
+
+.reviewClamp {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.oneLine {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.quoteCard {
+  height: 163px;
+  box-sizing: border-box;
+  gap: 8px;
+}
+
+.quoteCard .quote {
+  margin: 0 0 6px;
+}
+
+.fileName {
+  max-width: 90%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.viewerName {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 11, 20, 0.7);
+  backdrop-filter: blur(3px);
+  animation: fade 150ms ease-out;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  box-sizing: border-box;
+  width: 640px;
+  max-height: 560px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(200, 216, 255, 0.35);
+  border-radius: 24px;
+  background: #171c2f;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+
+.modalHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modalHead h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.modalClose {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.modalBody {
+  overflow-y: auto;
+  padding: 18px 24px 22px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 24px 20px;
+}
+
+.modalText {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: #c9cfdd;
+}
+
+.modalBody .reviewTitle {
+  font-size: 18px;
+}
+
+.modalBody .reviewBody {
+  margin-top: 8px;
+}
+
+.fullSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fullTitle {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.fullRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 15px;
+}
+
+.fullRow span {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #aeb4c6;
+}
+
+.fullSource {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fullNote {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #f2c27a;
+}
+
+.restartBtn {
+  position: absolute;
+  right: 252px;
+  top: 14px;
+  z-index: 3;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(12, 15, 28, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px !important;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #aeb4c6 !important;
+}
+
+.restartBtn:hover {
+  border-color: rgba(245, 160, 160, 0.6);
+  color: #f5c9c9 !important;
+}
+
+.dangerBtn {
+  height: 50px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 25px;
+  background: #f0a3a3;
+  color: #2a1418 !important;
+  font-size: 13px !important;
+  font-weight: 700;
+  letter-spacing: 0.16em;
 }
