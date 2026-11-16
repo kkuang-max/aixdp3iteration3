@@ -130,6 +130,9 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
   paste notes and/or attach a PDF, `.txt` or `.md`, then press **Submit**: `POST /api/build-section` has Claude format
   just that section into a headline and rows, shown in the AI preview where it can be edited. Same API key.
 - **Rows:** every section has a headline and at most 5 rows, in the portal, from the AI and on the kiosk.
+- **Try it:** opens the kiosk (`/?preview=1`) on the portal's current draft, unpublished, marked "Preview · not
+  published". It shows exactly what is filled in: empty sections read "Not filled in yet" and with no model the
+  middle says "No 3D model uploaded yet". Pressing Try it again updates an open preview tab.
 - **No stand-in content:** the portal starts empty. Sections are only filled by what the exhibitor uploads, types or
   asks the AI for; the parts views stay empty until a 3D model is uploaded, and publishing waits until every section
   has a headline and a row and at least one interaction exists.

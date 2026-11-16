@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { TOPICS } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
-import { MAX_ROWS, publishDemo, publishModelFile, shrinkImage, type PublishedDemo } from "@/lib/published";
+import { MAX_ROWS, publishDemo, publishModelFile, savePreviewDemo, shrinkImage, type PublishedDemo } from "@/lib/published";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -604,32 +604,34 @@ export default function BusinessPage() {
   // Publish: the kiosk shows these sections, gestures and model pictures from now on.
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<{ server: boolean; note?: string; at: string } | null>(null);
+  // What the kiosk shows: exactly the sections, gestures and model filled in here.
+  const buildDemo = async (preview: boolean): Promise<PublishedDemo> => {
+    let pictures: PublishedDemo["model"];
+    if (model) {
+      // Pictures of every part (the kiosk lights up whichever part a visitor points at).
+      const parts: Record<string, string> = {};
+      for (const p of model.parts) parts[p.name] = await shrinkImage(p.context, 400);
+      pictures = { fileName: model.fileName, whole: await shrinkImage(model.whole), parts, partNames: model.parts.map((p) => p.name) };
+      const stored = await loadFile("model");
+      if (stored) pictures.file = preview ? { name: stored.name } : { name: stored.name, path: (await publishModelFile(stored)).path };
+    }
+    return {
+      version: 1,
+      preview: preview || undefined,
+      publishedAt: new Date().toISOString(),
+      productName: config.productName,
+      sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows: rows.slice(0, MAX_ROWS) })),
+      mappings: config.mappings,
+      model: pictures,
+    };
+  };
   const finish = async () => {
     const empty = config.sections.filter((x) => sectionStatus(x) === "insufficient");
     if (empty.length) { setNotice(`Fill in ${empty.map((x) => x.label).join(", ")} before publishing.`); return; }
     if (config.mappings.length === 0) { setNotice("Add at least one interaction before publishing."); return; }
     setPublishing(true);
     try {
-      let pictures: PublishedDemo["model"];
-      if (model) {
-        // Pictures of every part (the kiosk lights up whichever part a visitor points at).
-        const parts: Record<string, string> = {};
-        for (const p of model.parts) parts[p.name] = await shrinkImage(p.context, 400);
-        pictures = { fileName: model.fileName, whole: await shrinkImage(model.whole), parts, partNames: model.parts.map((p) => p.name) };
-        const stored = await loadFile("model");
-        if (stored) {
-          const { path } = await publishModelFile(stored);
-          pictures.file = { name: stored.name, path };
-        }
-      }
-      const demo: PublishedDemo = {
-        version: 1,
-        publishedAt: new Date().toISOString(),
-        productName: config.productName,
-        sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows: rows.slice(0, MAX_ROWS) })),
-        mappings: config.mappings,
-        model: pictures,
-      };
+      const demo = await buildDemo(false);
       const result = await publishDemo(demo);
       if (!result.local && !result.server) { setNotice("Couldn't publish: storage is blocked in this browser."); return; }
       setPublished({ server: result.server, note: result.serverNote, at: demo.publishedAt });
@@ -637,6 +639,15 @@ export default function BusinessPage() {
       setNotice("Couldn't publish. Try again.");
     } finally {
       setPublishing(false);
+    }
+  };
+  // Try it: open the kiosk on this draft (not the published demo), showing only what is filled in so far.
+  const tryIt = async () => {
+    window.open("/?preview=1", "playform-preview"); // opened first so the browser doesn't block it; it reloads when the draft is saved
+    try {
+      await savePreviewDemo(await buildDemo(true));
+    } catch {
+      setNotice("Couldn't open the preview: storage is blocked in this browser.");
     }
   };
 
@@ -958,7 +969,7 @@ export default function BusinessPage() {
           <p className={styles.gestureNote}>Open palm (hold) always resets the demo</p>
         </div>
         <Foot back={{ label: "BACK", onClick: backFromGestures }} next={<>
-          <a className={styles.outlineBtnDim} href="/" target="_blank" rel="noopener noreferrer">TRY IT</a>
+          <button type="button" className={styles.outlineBtnDim} onClick={tryIt} title="Open the kiosk with what is filled in so far (not published)">TRY IT</button>
           <button type="button" className={styles.outlineBtn} onClick={finish} disabled={publishing}>{publishing ? "PUBLISHING…" : "PUBLISH TO KIOSK"} <Arrow /></button>
         </>} />
       </>

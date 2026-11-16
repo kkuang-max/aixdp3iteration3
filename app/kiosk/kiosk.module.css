@@ -1105,3 +1105,47 @@ video.camVideo {
 .modelPicture:has([data-live-model][data-ready]) {
   pointer-events: auto;
 }
+
+/* ---- "Try it" preview from the portal: only what is filled in ---- */
+.previewTag {
+  position: absolute;
+  z-index: 30;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid rgba(242, 194, 122, 0.55);
+  border-radius: 999px;
+  background: rgba(242, 194, 122, 0.14);
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: #f2c27a;
+  pointer-events: none;
+}
+
+.panelTitle[data-empty] {
+  color: #9aa0b3;
+  font-weight: 400;
+}
+
+.noModel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.noModel span {
+  padding: 14px 22px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  font-size: 15px;
+  color: #9aa0b3;
+}
+

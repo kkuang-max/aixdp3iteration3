@@ -8,6 +8,8 @@ export type PublishedSection = { id: string; title: string; rows: { a: string; b
 export type PublishedMapping = { gesture: string; sectionId: string; part: string; mode: string };
 export type PublishedDemo = {
   version: 1;
+  /** A draft opened with "Try it" in the portal: shows exactly what is filled in, nothing else. */
+  preview?: boolean;
   publishedAt: string;
   productName: string;
   sections: PublishedSection[];
@@ -27,6 +29,8 @@ export type PublishedDemo = {
 const DB = "playform";
 const STORE = "files";
 const KEY = "published";
+const PREVIEW_KEY = "preview";
+const PREVIEW_CHANNEL = "playform-preview";
 export const MAX_SERVER_BYTES = 4_000_000; // Vercel caps request bodies at 4.5 MB
 /** Every kiosk section shows a headline and at most this many rows. */
 export const MAX_ROWS = 5;
@@ -101,6 +105,38 @@ export async function loadPublishedDemo(): Promise<PublishedDemo | null> {
   return newest && capRows(newest);
 }
 
+/** "Try it": keep the portal's current draft for the kiosk preview tab, and tell an open preview to reload. */
+export async function savePreviewDemo(demo: PublishedDemo) {
+  await idb("readwrite", (s) => s.put(demo, PREVIEW_KEY));
+  try {
+    const ch = new BroadcastChannel(PREVIEW_CHANNEL);
+    ch.postMessage("updated");
+    ch.close();
+  } catch {
+    /* no BroadcastChannel: the preview reloads when its tab is shown */
+  }
+}
+
+export async function loadPreviewDemo(): Promise<PublishedDemo | null> {
+  try {
+    const d = await idb<unknown>("readonly", (s) => s.get(PREVIEW_KEY));
+    return isDemo(d) ? capRows(d) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Calls `onChange` whenever the portal saves a new draft with "Try it". */
+export function watchPreview(onChange: () => void): () => void {
+  try {
+    const ch = new BroadcastChannel(PREVIEW_CHANNEL);
+    ch.onmessage = onChange;
+    return () => ch.close();
+  } catch {
+    return () => {};
+  }
+}
+
 export async function unpublishLocal() {
   try {
     await idb("readwrite", (s) => s.delete(KEY));
@@ -150,6 +186,11 @@ export async function publishModelFile(file: { name: string; type: string; data:
 export async function loadPublishedModelFile(demo: PublishedDemo): Promise<{ name: string; data: ArrayBuffer } | null> {
   const file = demo.model?.file;
   if (!file) return null;
+  if (demo.preview) {
+    // The draft's model is the one the portal is working on.
+    const draft = await loadFile("model");
+    return draft && draft.name === file.name ? { name: draft.name, data: draft.data } : null;
+  }
   if (file.path) {
     try {
       const res = await fetch(`/api/kiosk-model?path=${encodeURIComponent(file.path)}`);
