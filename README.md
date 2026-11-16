@@ -132,7 +132,8 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
 - **Rows:** every section has a headline and at most 5 rows, in the portal, from the AI and on the kiosk.
 - **Try it:** opens the kiosk (`/?preview=1`) on the portal's current draft, unpublished, marked "Preview · not
   published". It shows exactly what is filled in: empty sections read "Not filled in yet" and with no model the
-  middle says "No 3D model uploaded yet". Pressing Try it again updates an open preview tab.
+  middle says "No 3D model uploaded yet". Pressing Try it again updates an open preview tab; the × on the tag
+  closes the preview and goes back to the portal.
 - **No stand-in content:** the portal starts empty. Sections are only filled by what the exhibitor uploads, types or
   asks the AI for; the parts views stay empty until a 3D model is uploaded, and publishing waits until every section
   has a headline and a row and at least one interaction exists.

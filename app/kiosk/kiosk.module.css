@@ -1123,8 +1123,30 @@ video.camVideo {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.18em;
+  gap: 10px;
+  padding-right: 4px;
   color: #f2c27a;
-  pointer-events: none;
+}
+
+.previewClose {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(242, 194, 122, 0.18);
+  color: #f2c27a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.previewClose:hover,
+.previewClose:focus-visible {
+  background: #f2c27a;
+  color: #1b2036;
+  outline: none;
 }
 
 .panelTitle[data-empty] {

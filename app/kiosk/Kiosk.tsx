@@ -77,6 +77,12 @@ export default function Kiosk() {
   // With ?preview=1 ("Try it" in the portal) show the portal's current draft instead, and reload it whenever the
   // portal saves a new one.
   const [preview, setPreview] = useState(false);
+  // The preview tab was opened by the portal's Try it: close it and go back there. If the browser won't let this tab
+  // close (it was opened some other way), go to the portal instead.
+  const exitPreview = () => {
+    window.close();
+    setTimeout(() => { if (!window.closed) window.location.href = "/business"; }, 150);
+  };
   // Before the first paint, so a preview never flashes the built-in sample content.
   useLayoutEffect(() => {
     if (new URLSearchParams(window.location.search).has("preview")) setPreview(true);
@@ -558,7 +564,14 @@ export default function Kiosk() {
     <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
-        {preview && <div className={styles.previewTag}>PREVIEW · NOT PUBLISHED</div>}
+        {preview && (
+          <div className={styles.previewTag}>
+            PREVIEW · NOT PUBLISHED
+            <button type="button" className={styles.previewClose} aria-label="Exit the preview" title="Exit the preview" onClick={exitPreview}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+        )}
 
         {screen === "hub" && (
           <Hub
