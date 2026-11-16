@@ -1851,7 +1851,7 @@
   background: #c8d8ff;
   color: #1b2036 !important;
   font-size: 12px !important;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.16em;
 }
 
@@ -1895,4 +1895,59 @@
 .dashedBtn:disabled {
   opacity: 0.35;
   cursor: default !important;
+}
+
+/* ---- Empty states: nothing is filled in until the exhibitor adds it ---- */
+.emptyNote {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #9aa0b3;
+}
+
+.emptyPreview {
+  flex: 1;
+  margin: 0;
+  padding: 0 40px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #9aa0b3;
+}
+
+.partsPreview .emptyNote {
+  max-width: 280px;
+  text-align: center;
+}
+
+.viewerEmpty {
+  padding: 0 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.kioskTitle[data-empty] {
+  color: #9aa0b3;
+  font-weight: 400;
+}
+
+.outlineSmall:disabled,
+.smallPill:disabled {
+  opacity: 0.4;
+  cursor: default !important;
+}
+
+.viewerEmpty label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
 }

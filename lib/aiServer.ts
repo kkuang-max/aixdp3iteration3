@@ -6,7 +6,6 @@ export const MAX_DOC_BYTES = 4 * 1024 * 1024; // Vercel caps request bodies at 4
 /** Every kiosk section shows a headline and at most this many rows. */
 export const MAX_ROWS = 5;
 export const SECTION_IDS = ["what", "how", "different", "uses", "specs"] as const;
-export const SAMPLE_PARTS = ["Ear tip", "Driver", "Battery", "Chip board", "Microphones"];
 
 /** Answer for a deployment without an API key, or null when the key is there. */
 export function aiNotSetUp(): Response | null {
@@ -30,18 +29,18 @@ export async function docBlockFrom(doc: File): Promise<Anthropic.Beta.BetaConten
   return Response.json({ error: "Use a PDF or a .txt / .md file. Word files: save as PDF first." }, { status: 415 });
 }
 
-/** Part names sent by the page (the uploaded model's), falling back to the sample earbud's. */
-export function partsFrom(form: FormData): { parts: string[]; sample: boolean } {
+/** Part names of the uploaded 3D model, sent by the page. Empty when no model has been uploaded. */
+export function partsFrom(form: FormData): string[] {
   try {
     const raw = JSON.parse(String(form.get("parts") ?? "[]"));
     if (Array.isArray(raw)) {
       const parts = raw.filter((p): p is string => typeof p === "string" && p.trim().length > 0).map((p) => p.slice(0, 80)).slice(0, 40);
-      if (parts.length) return { parts, sample: false };
+      return parts;
     }
   } catch {
-    /* no parts: use the sample earbud's */
+    /* no model */
   }
-  return { parts: SAMPLE_PARTS, sample: true };
+  return [];
 }
 
 /** Turns an API failure into a message the exhibitor can act on. */

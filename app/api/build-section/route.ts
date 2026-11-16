@@ -56,14 +56,14 @@ export async function POST(request: Request) {
   }
   if (!notes && !content.length) return Response.json({ error: "Type or paste something, or attach a file, first." }, { status: 400 });
 
-  const { parts, sample } = partsFrom(form);
+  const parts = partsFrom(form);
   const productName = String(form.get("productName") ?? "").slice(0, 80);
   content.push({
     type: "text",
     text:
       `Section: ${SECTIONS[sectionId]}\n` +
       `Product: ${productName || "not given"}\n` +
-      (sectionId === "how" ? `Parts in the 3D model: ${parts.join(", ")}${sample ? " (sample model)" : ""}. Name rows after these parts where they match.\n` : "") +
+      (sectionId === "how" && parts.length ? `Parts in the 3D model: ${parts.join(", ")}. Name rows after these parts where they match.\n` : "") +
       (notes ? `\nThe exhibitor's notes:\n"""\n${notes}\n"""\n` : "") +
       "\nWrite this section's kiosk copy.",
   });

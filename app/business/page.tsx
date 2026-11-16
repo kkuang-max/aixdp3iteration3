@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { MODEL, TOPICS, type PartId } from "@/lib/product";
+import { TOPICS } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
 import { MAX_ROWS, publishDemo, publishModelFile, shrinkImage, type PublishedDemo } from "@/lib/published";
@@ -47,32 +47,24 @@ type Screen =
 
 const STAGE_W = 1280;
 const STAGE_H = 720;
-const STORAGE_KEY = "playform.business.draft.v1";
+const STORAGE_KEY = "playform.business.draft.v2"; // v2: starts empty (v1 drafts held sample content)
 
-const sampleSection = (id: string): Section => {
+// Nothing is filled in until the exhibitor uploads, types or asks the AI: every section starts empty.
+const emptySection = (id: string): Section => {
   const t = TOPICS.find((topic) => topic.id === id) ?? TOPICS[0];
-  return { id: t.id, label: t.short, title: t.title, rows: t.rows.map(({ a, b }) => ({ a, b })) };
+  return { id: t.id, label: t.short, title: "", rows: [] };
 };
-const DEMO_SECTIONS: Section[] = TOPICS.map((t) => sampleSection(t.id));
-const START_MAPPINGS: Mapping[] = [
-  { gesture: "1 swipe right", sectionId: "what", part: "Whole product", mode: "Slow turn" },
-  { gesture: "2 swipes right", sectionId: "how", part: "Driver", mode: "Explode apart" },
-  { gesture: "3 swipes right", sectionId: "different", part: "Microphones", mode: "Highlight" },
-  { gesture: "Swipe up", sectionId: "specs", part: "Battery", mode: "Highlight" },
-  { gesture: "Swipe left", sectionId: "what", part: "Whole product", mode: "Put back together" },
-];
+const EMPTY_SECTIONS: Section[] = TOPICS.map((t) => emptySection(t.id));
 const GESTURES = ["1 swipe right", "2 swipes right", "3 swipes right", "4 swipes right", "Swipe up", "Swipe down", "Swipe left", "Point / hover"];
-const PARTS = ["Whole product", "Ear tip", "Driver", "Battery", "Chip board", "Microphones", "Charging case", "None"];
 const MODES = ["Slow turn", "Explode apart", "Highlight", "Zoom in", "Put back together"];
-const PART_LABELS: Record<PartId, string> = { shell: "Whole product", tip: "Ear tip", driver: "Driver", battery: "Battery", board: "Chip board", mic: "Microphones" };
 
-// Sample-only details shown in the auto flow (the prototype doesn't read the uploaded files yet).
-const AUTO_META: Record<string, { source: string; quote: string; format: string; hint: string }> = {
-  what: { source: "PRD p. 1", quote: "Orbit is a true-wireless earbud with adaptive noise cancelling…", format: "1-sentence headline + 3 one-line points", hint: "Add a headline and 3 or less points" },
-  how: { source: "PRD p. 3–4", quote: "Each earbud has six main parts: ear tip, driver, battery…", format: "headline + 1 row per model part · name + 1 line", hint: "Add a headline and 1 row per model part" },
-  different: { source: "PRD p. 2", quote: "Unlike fixed-level ANC, Orbit adjusts to the room in real time…", format: "headline + 3 points · title + 1 line", hint: "Add a headline and 3 points" },
-  uses: { source: "PRD p. 1", quote: "Target users are daily commuters who want to block out transit noise…", format: "headline + 3–5 scenes · name + 1 line", hint: "Add a headline and 3–5 scenes" },
-  specs: { source: "PRD p. 6", quote: "Battery: [X] h per charge, [X] h with case. Bluetooth [5.x]…", format: "headline + up to 5 rows · label + value", hint: "Add a headline and up to 5 rows" },
+// What each section asks for (the subtitle on the section editor).
+const HINTS: Record<string, string> = {
+  what: "Add a headline and 3 or less points",
+  how: "Add a headline and 1 row per model part",
+  different: "Add a headline and 3 points",
+  uses: "Add a headline and 3–5 scenes",
+  specs: "Add a headline and up to 5 rows",
 };
 const PROMPTS: Record<string, string> = {
   what: "Describe what your product is",
@@ -83,11 +75,11 @@ const PROMPTS: Record<string, string> = {
 };
 
 const defaultConfig: BusinessConfig = {
-  productName: "Orbit Earbuds",
+  productName: "",
   documentName: "",
   modelName: "",
-  sections: DEMO_SECTIONS,
-  mappings: START_MAPPINGS,
+  sections: EMPTY_SECTIONS,
+  mappings: [],
   notes: {},
   sectionFiles: {},
 };
@@ -405,7 +397,7 @@ export default function BusinessPage() {
         const loaded = await buildModelParts(stored.name, stored.data);
         if (!cancelled) setModel(loaded);
       } catch {
-        /* the stored model can't be read any more: fall back to the sample */
+        /* the stored model can't be read any more: upload it again */
       } finally {
         if (!cancelled) setModelBusy(false);
       }
@@ -488,7 +480,7 @@ export default function BusinessPage() {
       setModelBusy(false);
     }
   };
-  const useSampleModel = async () => {
+  const removeModel = async () => {
     setModel(null);
     setPartIndex(0);
     save({ ...config, modelName: "" });
@@ -516,9 +508,7 @@ export default function BusinessPage() {
   // Ask the AI (server route) to draft the sections and gestures from the product doc.
   const buildWithAI = async () => {
     if (!docFile) {
-      save({ ...config, aiBuilt: false });
-      setNotice("No product doc uploaded, so this is the sample content.");
-      go({ name: "a-edit", id: config.sections[0].id });
+      setNotice(config.documentName ? `Upload ${config.documentName} again so the AI can read it.` : "Upload a product doc first.");
       return;
     }
     setAiBusy(true);
@@ -563,7 +553,8 @@ export default function BusinessPage() {
     save({ ...config, sectionFiles });
     await deleteFile(`section-${id}`);
   };
-  // Manual: the AI turns whatever was typed, pasted or attached for one section into that section's kiosk copy.
+  // The AI writes one section's kiosk copy from what the exhibitor gave it: typed / pasted notes and/or a file.
+  // Manual: Submit sends that section's box. Auto: Regenerate sends the product doc again for just that section.
   const formatSection = async (id: string) => {
     const notes = (config.notes[id] ?? "").trim();
     const file = sectionDocs[id];
@@ -571,6 +562,13 @@ export default function BusinessPage() {
       setNotice(config.sectionFiles[id] ? `Attach ${config.sectionFiles[id]} again so the AI can read it.` : "Type, paste or attach something first.");
       return;
     }
+    await writeSection(id, notes, file);
+  };
+  const regenerateFromDoc = async (id: string) => {
+    if (!docFile) { setNotice(config.documentName ? `Upload ${config.documentName} again so the AI can read it.` : "Upload a product doc first."); return; }
+    await writeSection(id, "", docFile);
+  };
+  const writeSection = async (id: string, notes: string, file: File | undefined) => {
     setFormatting(id);
     setEditingPreview(false);
     const form = new FormData();
@@ -607,6 +605,9 @@ export default function BusinessPage() {
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<{ server: boolean; note?: string; at: string } | null>(null);
   const finish = async () => {
+    const empty = config.sections.filter((x) => sectionStatus(x) === "insufficient");
+    if (empty.length) { setNotice(`Fill in ${empty.map((x) => x.label).join(", ")} before publishing.`); return; }
+    if (config.mappings.length === 0) { setNotice("Add at least one interaction before publishing."); return; }
     setPublishing(true);
     try {
       let pictures: PublishedDemo["model"];
@@ -686,7 +687,7 @@ export default function BusinessPage() {
                 <span className={styles.mutedSmall}>{model.parts.length} part{model.parts.length === 1 ? "" : "s"} found</span>
                 <span className={styles.replaceRow}>
                   <FileButton accept={MODEL_ACCEPT} className={styles.replace} onFile={onModelFile}>Replace</FileButton>
-                  <button type="button" className={styles.textLink} onClick={useSampleModel}>Use sample</button>
+                  <button type="button" className={styles.textLink} onClick={removeModel}>Remove</button>
                 </span>
               </div>
             ) : (
@@ -699,12 +700,12 @@ export default function BusinessPage() {
         </div>
         {aiError ? (
           <p className={`${styles.manualHint} ${styles.aiError}`} role="alert">
-            {aiError} <button type="button" className={styles.textLink} onClick={() => { setAiError(""); save({ ...config, aiBuilt: false }); go({ name: "a-edit", id: config.sections[0].id }); }}>Continue with sample content</button>
+            {aiError} <button type="button" className={styles.textLink} onClick={() => { setAiError(""); go({ name: "a-edit", id: config.sections[0].id }); }}>Fill in the sections yourself</button>
           </p>
         ) : (
           <p className={styles.manualHint}>Rather write it yourself? <button type="button" className={styles.textLink} onClick={() => switchMode("manual")}>Use manual setup</button></p>
         )}
-        <button type="button" className={styles.primaryBtn} onClick={buildWithAI} disabled={aiBusy || modelBusy}>BUILD MY DEMO <Arrow /></button>
+        <button type="button" className={styles.primaryBtn} onClick={buildWithAI} disabled={aiBusy || modelBusy || !docFile} title={docFile ? undefined : "Upload a product doc first"}>BUILD MY DEMO <Arrow /></button>
         {aiBusy && (
           <div className={styles.busy} role="status">
             <span className={styles.spinner} />
@@ -719,14 +720,14 @@ export default function BusinessPage() {
   if (screen.name === "a-edit") {
     const at = Math.max(0, config.sections.findIndex((x) => x.id === screen.id));
     const s = config.sections[at];
-    const meta = AUTO_META[s.id];
     const status = sectionStatus(s);
+    const busy = formatting === s.id;
     const gestureStatus: Status = config.mappings.length === 0 ? "insufficient" : "good";
     const setRow = (i: number, patch: Partial<Row>) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, ...patch } : y)) }));
     const next = config.sections[at + 1];
     body = (
       <>
-        <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}.` : `Sample sections for ${config.documentName || "your product doc"}.`} Open any section to edit it.</p></div>
+        <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}. Open any section to edit it.` : "Nothing is filled in yet. Write each section, or build them from a product doc."}</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
         <nav className={styles.sideNav} aria-label="Sections">
           {config.sections.map((x) => {
@@ -746,14 +747,15 @@ export default function BusinessPage() {
             <h2>{s.label.toUpperCase()}</h2>
             <StatusLabel status={status} />
           </div>
-          <p className={styles.editHint}>{meta?.hint ?? "Edit what the kiosk shows"}</p>
+          <p className={styles.editHint}>{HINTS[s.id] ?? "Edit what the kiosk shows"}</p>
           <div className={styles.fieldLabel}>HEADLINE</div>
-          <div className={styles.cellGrid}><Cell span label="Headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} /></div>
+          <div className={styles.cellGrid}><Cell span label="Headline" placeholder="Write a headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} /></div>
           <div className={styles.fieldLabel}>ROWS</div>
           <div className={styles.editRows}>
+            {s.rows.length === 0 && <p className={styles.emptyNote}>No rows yet. Add up to {MAX_ROWS}.</p>}
             {s.rows.map((r, i) => (
               <div key={i} className={styles.editRow}>
-                <Cell widen bold label={`Row ${i + 1} name`} value={r.a} onChange={(v) => setRow(i, { a: v })} />
+                <Cell widen bold label={`Row ${i + 1} name`} placeholder="Name" value={r.a} onChange={(v) => setRow(i, { a: v })} />
                 <Cell label={`Row ${i + 1} line`} placeholder="One line" value={r.b} onChange={(v) => setRow(i, { b: v })} />
                 <button type="button" className={styles.remove} aria-label={`Remove row ${i + 1}`} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: x.rows.filter((_, j) => j !== i) }))}>×</button>
               </div>
@@ -761,13 +763,20 @@ export default function BusinessPage() {
           </div>
           <div className={styles.editButtons}>
             <button type="button" className={styles.dashedBtn} disabled={s.rows.length >= MAX_ROWS} title={s.rows.length >= MAX_ROWS ? `${MAX_ROWS} rows at most` : undefined} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }].slice(0, MAX_ROWS) }))}>+ ADD ROW</button>
-            <button type="button" className={styles.outlineSmall} onClick={() => { updateSection(s.id, () => sampleSection(s.id)); setNotice("Restored the sample content for this section."); }}>REGENERATE</button>
+            <button type="button" className={styles.outlineSmall} disabled={!docFile || busy} title={docFile ? `Write this section again from ${docFile.name}` : "Upload a product doc to regenerate with AI"} onClick={() => regenerateFromDoc(s.id)}>{busy ? "REGENERATING…" : "REGENERATE"}</button>
           </div>
+          {busy && (
+            <div className={styles.previewBusy} role="status">
+              <span className={styles.spinner} />
+              <b>Reading {docFile?.name}…</b>
+              <span>The AI is writing {s.label} again.</span>
+            </div>
+          )}
         </div>
         <div className={`${styles.card} ${styles.quoteCard}`}>
-          <div className={`${styles.kicker} ${styles.oneLine}`} title={s.source ?? meta?.source}>{s.quote ? `FROM YOUR DOCUMENT${s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""}` : "SAMPLE EXCERPT"}</div>
+          <div className={`${styles.kicker} ${styles.oneLine}`} title={s.source}>FROM YOUR DOCUMENT{s.quote && s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""}</div>
           <Clamp className={styles.fill} title={`From your document${s.source ? ` · ${s.source}` : ""}`}>
-            <blockquote className={styles.quote}>“{s.quote ?? meta?.quote}”</blockquote>
+            {s.quote ? <blockquote className={styles.quote}>“{s.quote}”</blockquote> : <p className={styles.emptyNote}>Nothing yet. When the AI builds this section, the passage it used shows here.</p>}
             {s.needsReview && s.reviewNote && <span className={styles.lookNoteSmall}>Needs attention: {s.reviewNote}</span>}
           </Clamp>
         </div>
@@ -799,16 +808,14 @@ export default function BusinessPage() {
           <div className={styles.partsHead}>
             <span className={styles.kicker} style={{ color: "#c8d8ff" }}>PARTS</span>
             <span className={styles.partsFile}>
-              <span className={styles.oneLine}>{model?.fileName ?? "OrbitEarbuds.obj"}</span>
-              {model && <button type="button" className={styles.textLink} onClick={useSampleModel}>Use sample</button>}
+              {model && <span className={styles.oneLine}>{model.fileName}</span>}
+              {model && <button type="button" className={styles.textLink} onClick={removeModel}>Remove</button>}
             </span>
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <div className={styles.partsPreview}>{model ? <img className={styles.slideImg} src={model.whole} alt={`${model.fileName} preview`} /> : <PartDiagram selected={null} onPick={() => {}} />}</div>
+          <div className={styles.partsPreview}>{model ? <img className={styles.slideImg} src={model.whole} alt={`${model.fileName} preview`} /> : <p className={styles.emptyNote}>No model yet. Upload one on the left and its parts show here.</p>}</div>
           <div className={`${styles.chips} ${styles.chipsScroll}`}>
-            {model
-              ? model.parts.map((p) => <span key={p.name} className={styles.chip}>{p.name}</span>)
-              : MODEL.parts.map((p) => <span key={p.id} className={styles.chip}>{p.id === "shell" ? "Shell" : PART_LABELS[p.id]}</span>)}
+            {model?.parts.map((p) => <span key={p.name} className={styles.chip}>{p.name}</span>)}
           </div>
         </div>
         <Foot next={<button type="button" className={styles.outlineBtn} onClick={() => go({ name: "m-section", index: 0 })}>NEXT <Arrow /></button>} />
@@ -859,21 +866,23 @@ export default function BusinessPage() {
           <div className={styles.previewHead}>
             <span className={styles.previewTitle}>AI PREVIEW · KIOSK PANEL</span>
             <span className={styles.previewBtns}>
-              <button type="button" className={styles.smallPill} onClick={() => { updateSection(s.id, () => sampleSection(s.id)); setNotice("Restored the sample content for this section."); }}>REGENERATE</button>
+              <button type="button" className={styles.smallPill} disabled={!hasInput || busy} title={hasInput ? "Ask the AI to write it again" : "Type, paste or attach something first"} onClick={() => formatSection(s.id)}>REGENERATE</button>
               <button type="button" className={styles.smallPill} aria-pressed={editingPreview} onClick={() => setEditingPreview((v) => !v)}>{editingPreview ? "DONE" : "EDIT"}</button>
             </span>
           </div>
           {editingPreview ? (
             <div className={styles.previewBox}>
               <div className={styles.cellGrid}>
-                <Cell span label="Headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} />
+                <Cell span label="Headline" placeholder="Write a headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} />
                 {s.rows.map((r, i) => [
-                  <Cell key={`a${i}`} widen label={`Row ${i + 1} name`} value={r.a} onChange={(v) => setRow(i, { a: v })} />,
+                  <Cell key={`a${i}`} widen label={`Row ${i + 1} name`} placeholder="Name" value={r.a} onChange={(v) => setRow(i, { a: v })} />,
                   <Cell key={`b${i}`} label={`What ${r.a || `row ${i + 1}`} does`} placeholder="One line" value={r.b} onChange={(v) => setRow(i, { b: v })} />,
                 ])}
               </div>
               {s.rows.length < MAX_ROWS && <button type="button" className={styles.dashedBtn} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }].slice(0, MAX_ROWS) }))}>+ ADD ROW</button>}
             </div>
+          ) : !s.title.trim() && s.rows.length === 0 ? (
+            <p className={styles.emptyPreview}>Nothing to preview yet. Type, paste or attach on the left and press Submit, or press Edit to write it yourself.</p>
           ) : (
             <Clamp scroll className={styles.fill} title={`AI preview · ${s.label}`} full={<SectionFull section={s} />}>
               <KioskPreview flat section={{ ...s, label: `${String(screen.index + 1).padStart(2, "0")} · ${s.label}` }} />
@@ -901,10 +910,10 @@ export default function BusinessPage() {
           { label: "Whole product", part: <ModelImage src={model.whole} />, context: <ModelImage src={model.whole} /> },
           ...model.parts.map((p) => ({ label: p.name, part: <ModelImage src={p.image} />, context: <ModelImage src={p.context} /> })),
         ]
-      : SAMPLE_SLIDES;
-    const idx = Math.min(partIndex, slides.length - 1);
-    const slide = slides[idx];
-    const partOptions = model ? ["Whole product", ...model.parts.map((p) => p.name), "None"] : PARTS;
+      : [];
+    const idx = Math.max(0, Math.min(partIndex, slides.length - 1));
+    const slide = slides[idx] as Slide | undefined;
+    const partOptions = ["Whole product", ...(model?.parts.map((p) => p.name) ?? []), "None"];
     const showPart = (part: string) => {
       const i = slides.findIndex((p) => p.label === part);
       if (i >= 0) setPartIndex(i);
@@ -914,10 +923,16 @@ export default function BusinessPage() {
         <div className={styles.guide}><h1>INTERACTIONS</h1><p>Scroll through {model ? `the parts of ${model.fileName}` : "the parts"} and map each gesture</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
         <div className={styles.listTools}>
-          <button type="button" className={styles.dashedBtn} onClick={() => save({ ...config, mappings: [...config.mappings, { gesture: "4 swipes right", sectionId: "how", part: slide.label, mode: "Highlight" }] })}>+ ADD INTERACTION</button>
+          <button type="button" className={styles.dashedBtn} onClick={() => save({ ...config, mappings: [...config.mappings, { gesture: GESTURES.find((g) => !config.mappings.some((m) => m.gesture === g)) ?? GESTURES[0], sectionId: config.sections[0].id, part: slide?.label ?? "Whole product", mode: "Highlight" }] })}>+ ADD INTERACTION</button>
         </div>
+        {slides.length === 0 ? (
+          <div className={`${styles.card} ${styles.viewer} ${styles.viewerEmpty}`}>
+            <p className={styles.emptyNote}>No 3D model yet. Upload one to scroll through its parts here.</p>
+            <FileButton accept={MODEL_ACCEPT} className={styles.outlineSmall} onFile={onModelFile}>{modelBusy ? "FINDING THE PARTS…" : "UPLOAD A MODEL"}</FileButton>
+          </div>
+        ) : (
         <PartViewer
-          key={model?.fileName ?? "sample"}
+          key={model?.fileName ?? "none"}
           slides={slides}
           index={idx}
           onIndex={setPartIndex}
@@ -925,11 +940,12 @@ export default function BusinessPage() {
           onToggleContext={() => setInContext((v) => !v)}
           gestures={(label) => config.mappings.filter((m) => m.part === label).map((m) => m.gesture)}
         />
+        )}
         <div className={`${styles.card} ${styles.gestureCard}`}>
           <div className={styles.gestureHead}><span>GESTURE</span><span>SHOWS</span><span>HIGHLIGHTS</span><span>MODEL DOES</span><span /></div>
           <div className={styles.gestureRows}>
             {config.mappings.map((m, i) => (
-              <div key={i} className={styles.gestureRow} data-match={m.part === slide.label ? "" : undefined} onClick={() => showPart(m.part)}>
+              <div key={i} className={styles.gestureRow} data-match={slide && m.part === slide.label ? "" : undefined} onClick={() => showPart(m.part)}>
                 <span className={styles.gestureName}><GestureIcon gesture={m.gesture} compact /><Select className={styles.gestureSelect} label={`Gesture ${i + 1}`} value={m.gesture} options={GESTURES.includes(m.gesture) ? GESTURES : [m.gesture, ...GESTURES]} onChange={(v) => updateMapping(i, { gesture: v })} /></span>
                 <Select label={`Text for ${m.gesture}`} value={m.sectionId} options={config.sections.map((s) => ({ value: s.id, label: s.label }))} onChange={(v) => updateMapping(i, { sectionId: v })} />
                 <Select label={`Part for ${m.gesture}`} value={m.part} options={partOptions.includes(m.part) ? partOptions : [m.part, ...partOptions]} onChange={(v) => { updateMapping(i, { part: v }); showPart(v); }} />
@@ -955,7 +971,7 @@ export default function BusinessPage() {
     <main className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
-        <div className={styles.eyebrow}>{config.productName.toUpperCase()} / SET UP YOUR DEMO</div>
+        <div className={styles.eyebrow}>{config.productName ? `${config.productName.toUpperCase()} / ` : ""}SET UP YOUR DEMO</div>
         <button type="button" className={styles.restartBtn} onClick={() => setConfirmRestart(true)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
           RESTART
@@ -1008,7 +1024,7 @@ function KioskPreview({ section, small, flat }: { section: Section; small?: bool
   return (
     <div className={`${styles.kioskPreview} ${small ? styles.kioskPreviewSmall : ""} ${flat ? styles.kioskPreviewFlat : ""}`}>
       <div className={styles.kioskKicker}>{section.label.toUpperCase()}</div>
-      <div className={styles.kioskTitle}>{section.title}</div>
+      <div className={styles.kioskTitle} data-empty={section.title ? undefined : ""}>{section.title || "No headline yet"}</div>
       {section.rows.map((r, i) => (
         <div key={i} className={styles.kioskRow}><span>{r.a || "—"}</span>{r.b && <small>{r.b}</small>}</div>
       ))}
@@ -1016,115 +1032,13 @@ function KioskPreview({ section, small, flat }: { section: Section; small?: bool
   );
 }
 
-// The exploded earbud, drawn from the kiosk's own geometry. Parts are clickable.
-// Where each part's gesture-number badge sits, relative to the part's centre (diagram units).
-const BADGE_AT: Record<PartId, [number, number]> = { shell: [70, -75], tip: [-10, -58], driver: [44, -40], battery: [34, -34], board: [34, -58], mic: [40, 2] };
-
-function PartDiagram({ selected, onPick, badges }: { selected: string | null; onPick: (part: string) => void; badges?: { n: number; part: string; on: boolean }[] }) {
-  const center = (id: PartId) => {
-    const p = MODEL.parts.find((x) => x.id === id)!;
-    const off = MODEL.off[id];
-    return [p.o[0] + off[0] * 0.7, p.o[1] + off[1] * 0.7];
-  };
-  const partOf = (label: string) => (Object.keys(PART_LABELS) as PartId[]).find((k) => PART_LABELS[k] === label);
-  return (
-    <svg className={styles.diagram} viewBox="-30 -30 600 460" role="group" aria-label="Exploded Orbit Earbuds, click a part">
-      {MODEL.parts.map((part) => {
-        const off = MODEL.off[part.id];
-        const label = PART_LABELS[part.id];
-        const chosen = selected === label;
-        return (
-          <g key={part.id} transform={`translate(${off[0] * 0.7} ${off[1] * 0.7})`} role="button" tabIndex={0} aria-label={label} aria-pressed={chosen}
-            className={chosen ? styles.partOn : styles.part} onClick={() => onPick(label)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(label); } }}>
-            <path d={part.d} fill={chosen ? "#c8d9ff" : part.tone === "metal" ? "#a4b4cd" : "#e0dce6"} fillRule="evenodd" stroke={chosen ? "#fff" : "#7f91b6"} strokeWidth={chosen ? 4 : 2} />
-            <title>{label}</title>
-          </g>
-        );
-      })}
-      {(Object.keys(BADGE_AT) as PartId[]).map((id) => {
-        const list = badges?.filter((b) => partOf(b.part) === id) ?? [];
-        if (!list.length) return null;
-        const [cx, cy] = center(id);
-        const [dx, dy] = BADGE_AT[id];
-        const text = list.map((b) => b.n).join(" · ");
-        const w = 30 + (text.length - 1) * 8;
-        const on = list.some((b) => b.on);
-        return (
-          <g key={id} transform={`translate(${cx + dx} ${cy + dy})`} pointerEvents="none">
-            <rect x={-w / 2} y={-15} width={w} height={30} rx={15} fill="#C8D8FF" stroke={on ? "rgba(200,216,255,0.35)" : "none"} strokeWidth="12" paintOrder="stroke" />
-            <text textAnchor="middle" dy="5" fontSize="14" fontWeight="700" fill="#1B2036">{text}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
 // ---- Interactions: a scrollable viewer with one part per slide -----------------------------
 const WHEEL_STEP = 40; // accumulated wheel delta (px) for one part
 const WHEEL_COOLDOWN_MS = 420; // trackpads keep sending momentum after a flick: one flick = one part
 const TOUCH_STEP = 30; // finger travel (px) for one part
-// Each slide fills the square and shows one part big and centred. It is a real scroll container (scroll-snap), so a
-// trackpad, mouse wheel, touch swipe or the arrow keys move through the parts one at a time. "View in context" swaps
-// the isolated part for the whole exploded earbud with that part lit up.
-const PART_SLIDES: { label: string; ids: PartId[] }[] = [
-  { label: "Whole product", ids: MODEL.parts.map((p) => p.id) },
-  ...(["tip", "driver", "battery", "board", "mic"] as PartId[]).map((id) => ({ label: PART_LABELS[id], ids: [id] })),
-];
-
-/** Bounding box of an outline (M/L/Q/A/Z with absolute coordinates, as in lib/product.ts). */
-function pathBox(d: string, dx = 0, dy = 0) {
-  const xs: number[] = [];
-  const ys: number[] = [];
-  const add = (x: number, y: number) => { xs.push(x + dx); ys.push(y + dy); };
-  let last: [number, number] = [0, 0];
-  for (const [, cmd, args] of d.matchAll(/([MLQAZ])([^MLQAZ]*)/gi)) {
-    const n = (args.match(/-?\d*\.?\d+/g) ?? []).map(Number);
-    if (/A/i.test(cmd)) {
-      // Half-circle arcs: the circle's centre is halfway between the ends.
-      for (let i = 0; i + 6 < n.length; i += 7) {
-        const [r, end] = [n[i], [n[i + 5], n[i + 6]] as [number, number]];
-        const c = [(last[0] + end[0]) / 2, (last[1] + end[1]) / 2];
-        add(c[0] - r, c[1] - r); add(c[0] + r, c[1] + r);
-        last = end;
-      }
-    } else {
-      for (let i = 0; i + 1 < n.length; i += 2) { add(n[i], n[i + 1]); last = [n[i], n[i + 1]]; }
-    }
-  }
-  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
-}
-
-function boxFor(ids: PartId[], exploded: boolean, pad: number) {
-  const boxes = ids.map((id) => {
-    const p = MODEL.parts.find((x) => x.id === id)!;
-    const off = exploded ? MODEL.off[id] : [0, 0];
-    return pathBox(p.d, off[0] * 0.7, off[1] * 0.7);
-  });
-  const x0 = Math.min(...boxes.map((b) => b.x0)), y0 = Math.min(...boxes.map((b) => b.y0));
-  const x1 = Math.max(...boxes.map((b) => b.x1)), y1 = Math.max(...boxes.map((b) => b.y1));
-  const size = Math.max(x1 - x0, y1 - y0) + pad * 2; // square, so every part ends up the same "big"
-  return `${(x0 + x1) / 2 - size / 2} ${(y0 + y1) / 2 - size / 2} ${size} ${size}`;
-}
-const CONTEXT_BOX = boxFor(MODEL.parts.map((p) => p.id), true, 30);
-
-function EarbudParts({ lit, exploded, viewBox, only }: { lit: PartId[]; exploded: boolean; viewBox: string; only?: boolean }) {
-  return (
-    <svg className={styles.slideSvg} viewBox={viewBox} aria-hidden="true">
-      {MODEL.parts.filter((part) => !only || lit.includes(part.id)).map((part) => {
-        const on = lit.includes(part.id);
-        const off = exploded ? MODEL.off[part.id] : [0, 0];
-        return (
-          <path key={part.id} d={part.d} transform={`translate(${off[0] * 0.7} ${off[1] * 0.7})`} fillRule="evenodd"
-            className={styles.slidePart} data-on={on ? "" : undefined}
-            fill={on ? (part.tone === "metal" ? "#c8d9ff" : "#eef1fb") : "#8d97b3"} stroke={on ? "#ffffff" : "#5d6a8a"} strokeWidth={on ? 2.5 : 1.5} />
-        );
-      })}
-    </svg>
-  );
-}
-
+// Each slide fills the square and shows one part of the uploaded model, big and centred. It is a real scroll
+// container (scroll-snap), so a trackpad, mouse wheel, touch swipe or the arrow keys move through the parts one at a
+// time. "View in context" swaps the part on its own for the whole model with that part lit up.
 type Slide = { label: string; part: ReactNode; context: ReactNode };
 
 // eslint-disable-next-line @next/next/no-img-element
@@ -1271,10 +1185,3 @@ function PartViewer({ slides, index, onIndex, inContext, onToggleContext, gestur
     </div>
   );
 }
-
-// The sample earbud, drawn from the kiosk's own geometry.
-const SAMPLE_SLIDES: Slide[] = PART_SLIDES.map((p) => ({
-  label: p.label,
-  part: <EarbudParts lit={p.ids} exploded={false} only viewBox={boxFor(p.ids, false, p.ids.length > 1 ? 24 : 14)} />,
-  context: <EarbudParts lit={p.ids} exploded viewBox={CONTEXT_BOX} />,
-}));

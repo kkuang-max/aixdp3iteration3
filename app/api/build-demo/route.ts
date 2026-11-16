@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   const docBlock = await docBlockFrom(doc);
   if (docBlock instanceof Response) return docBlock;
 
-  const { parts, sample } = partsFrom(form);
+  const parts = partsFrom(form);
   const productName = String(form.get("productName") ?? "").slice(0, 80);
 
   const Result = z.object({
@@ -96,7 +96,9 @@ export async function POST(request: Request) {
             {
               type: "text",
               text: `Product name (as the exhibitor typed it): ${productName || "not given; take it from the document"}\n` +
-                `Parts in the 3D model: ${parts.join(", ")}${sample ? " (sample model: no model uploaded yet)" : ""}\n\n` +
+                (parts.length
+                  ? `Parts in the 3D model: ${parts.join(", ")}\n\n`
+                  : "No 3D model has been uploaded yet: map every gesture to the Whole product.\n\n") +
                 "Write the five kiosk sections and the gesture sequence from this document.",
             },
           ],

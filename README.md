@@ -125,11 +125,14 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
   `POST /api/build-demo`, where Claude (`claude-opus-5-5`, structured output) writes the five sections (with the page
   and a quote it used, and "Needs attention" where the doc is missing facts) and a gesture → part sequence.
   It needs an Anthropic API key on the server: add `ANTHROPIC_API_KEY` in Vercel → Project → Settings → Environment
-  Variables (or `.env.local` for `npm run dev`) and redeploy. Without it the page says so and offers the sample content.
+  Variables (or `.env.local` for `npm run dev`) and redeploy. Without it the page says so, and the sections can still be written by hand.
 - **Manual setup with AI:** instead of one PRD, each manual section has a "Type, paste, or upload here" box. Type or
   paste notes and/or attach a PDF, `.txt` or `.md`, then press **Submit**: `POST /api/build-section` has Claude format
   just that section into a headline and rows, shown in the AI preview where it can be edited. Same API key.
 - **Rows:** every section has a headline and at most 5 rows, in the portal, from the AI and on the kiosk.
+- **No stand-in content:** the portal starts empty. Sections are only filled by what the exhibitor uploads, types or
+  asks the AI for; the parts views stay empty until a 3D model is uploaded, and publishing waits until every section
+  has a headline and a row and at least one interaction exists.
 
 ## Publishing to the kiosk
 
