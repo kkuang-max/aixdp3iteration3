@@ -1,6 +1,6 @@
-/* Business portal. Same 1280×720 artboard, background and type as the kiosk (see the ASK Figma, "Business View ·
-   rebuilt on the design system" section and the Playform design system; values follow its tokens). Previously:
-   "Business View" section: Auto 1–3, Manual 1–6 and Interactions 1–2). The artboard is scaled to fit. */
+/* Business portal. Same 1280×720 artboard, background and type as the kiosk. Follows the ASK Figma: the Playform
+   design system (tokens, text styles, business components) and the "Business View · rebuilt on the design system"
+   frames. The artboard is scaled to fit. */
 
 .viewport {
   position: fixed;
