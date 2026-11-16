@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { MODEL, TOPICS, type PartId } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
@@ -8,7 +9,7 @@ import { publishDemo, publishModelFile, shrinkImage, type PublishedDemo } from "
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
-//  - Auto (default): upload a product doc + 3D model, review the sections, edit any of them.
+//  - Auto (default): upload a product doc + 3D model; the AI drafts every section, then review and edit them one by one.
 //  - Manual: go section by section, uploading a pdf or pasting notes for each.
 // Both end on the gesture mapping screens. Everything is drawn on a 1280×720 artboard that is
 // scaled to fit the window, so it looks the same on any screen size or resolution.
@@ -39,7 +40,6 @@ type BusinessConfig = {
 };
 type Screen =
   | { name: "a-upload" }
-  | { name: "a-review" }
   | { name: "a-edit"; id: string }
   | { name: "m-model" }
   | { name: "m-section"; index: number }
@@ -67,12 +67,12 @@ const MODES = ["Slow turn", "Explode apart", "Highlight", "Zoom in", "Put back t
 const PART_LABELS: Record<PartId, string> = { shell: "Whole product", tip: "Ear tip", driver: "Driver", battery: "Battery", board: "Chip board", mic: "Microphones" };
 
 // Sample-only details shown in the auto flow (the prototype doesn't read the uploaded files yet).
-const AUTO_META: Record<string, { source: string; quote: string; format: string; kioskShows: string }> = {
-  what: { source: "PRD p. 1", quote: "Orbit is a true-wireless earbud with adaptive noise cancelling…", format: "1-sentence headline + 3 one-line points", kioskShows: "Kiosk shows a headline and 3 points" },
-  how: { source: "PRD p. 3–4", quote: "Each earbud has six main parts: ear tip, driver, battery…", format: "headline + 1 row per model part · name + 1 line", kioskShows: "Kiosk shows 1 row per part" },
-  different: { source: "PRD p. 2", quote: "Unlike fixed-level ANC, Orbit adjusts to the room in real time…", format: "headline + 3 points · title + 1 line", kioskShows: "Kiosk shows 3 points" },
-  uses: { source: "PRD p. 1", quote: "Target users are daily commuters who want to block out transit noise…", format: "headline + 3–5 scenes · name + 1 line", kioskShows: "Kiosk shows 3–5 scenes" },
-  specs: { source: "PRD p. 6", quote: "Battery: [X] h per charge, [X] h with case. Bluetooth [5.x]…", format: "headline + up to 5 rows · label + value", kioskShows: "Kiosk shows up to 5 rows" },
+const AUTO_META: Record<string, { source: string; quote: string; format: string; hint: string }> = {
+  what: { source: "PRD p. 1", quote: "Orbit is a true-wireless earbud with adaptive noise cancelling…", format: "1-sentence headline + 3 one-line points", hint: "Add a headline and 3 or less points" },
+  how: { source: "PRD p. 3–4", quote: "Each earbud has six main parts: ear tip, driver, battery…", format: "headline + 1 row per model part · name + 1 line", hint: "Add a headline and 1 row per model part" },
+  different: { source: "PRD p. 2", quote: "Unlike fixed-level ANC, Orbit adjusts to the room in real time…", format: "headline + 3 points · title + 1 line", hint: "Add a headline and 3 points" },
+  uses: { source: "PRD p. 1", quote: "Target users are daily commuters who want to block out transit noise…", format: "headline + 3–5 scenes · name + 1 line", hint: "Add a headline and 3–5 scenes" },
+  specs: { source: "PRD p. 6", quote: "Battery: [X] h per charge, [X] h with case. Bluetooth [5.x]…", format: "headline + up to 5 rows · label + value", hint: "Add a headline and up to 5 rows" },
 };
 const PROMPTS: Record<string, string> = {
   what: "Describe what your product is",
@@ -117,14 +117,14 @@ function GestureIcon({ gesture, compact }: { gesture: string; compact?: boolean 
 }
 
 // ---- Small building blocks ---------------------------------------------------------
-function Stepper({ total, current, onJump, wide }: { total: number; current: number; onJump: (i: number) => void; wide?: boolean }) {
+function Stepper({ total, current, onJump, wide, long }: { total: number; current: number; onJump: (i: number) => void; wide?: boolean; long?: boolean }) {
   return (
-    <div className={wide ? `${styles.stepper} ${styles.stepperWide}` : styles.stepper} aria-label="Setup progress">
+    <div className={`${styles.stepper} ${wide ? styles.stepperWide : ""} ${long ? styles.stepperLong : ""}`} aria-label="Setup progress">
       {Array.from({ length: total }, (_, i) => (
         <span key={i} className={styles.stepItem}>
           {i > 0 && <span className={styles.stepLine} data-done={i <= current ? "" : undefined} />}
           <button type="button" className={styles.stepDot} data-state={i < current ? "done" : i === current ? "current" : "todo"} onClick={() => onJump(i)} aria-label={`Go to step ${i + 1}`} aria-current={i === current ? "step" : undefined}>
-            {i < current && <Check size={wide ? 16 : 18} />}
+            {i < current && <Check size={16} />}
           </button>
         </span>
       ))}
@@ -144,11 +144,11 @@ function Select({ value, options, onChange, label, className }: { value: string;
   );
 }
 
-function FileButton({ accept, onFile, children, className }: { accept: string; onFile: (files: FileList | null) => void; children: ReactNode; className: string }) {
+function FileButton({ accept, onFile, children, className, disabled }: { accept: string; onFile: (files: FileList | null) => void; children: ReactNode; className: string; disabled?: boolean }) {
   return (
-    <label className={className}>
+    <label className={className} data-disabled={disabled ? "" : undefined}>
       {children}
-      <input type="file" accept={accept} className={styles.hiddenInput} onChange={(e) => { onFile(e.target.files); e.target.value = ""; }} />
+      <input type="file" accept={accept} disabled={disabled} className={styles.hiddenInput} onChange={(e) => { onFile(e.target.files); e.target.value = ""; }} />
     </label>
   );
 }
@@ -162,11 +162,143 @@ function Foot({ back, next }: { back?: { label: string; onClick: () => void }; n
   );
 }
 
-// ---- Overflow: "… More" opens the full text in a modal ------------------------------------
+// ---- Sheets-style cells: one line at rest, an editor that opens over its neighbours ----------------
+// At rest a cell shows one line, ending in "…" (plus an expand icon) when the text is longer than the box. Click it
+// and an editor opens on top of the cells around it, tall enough for the whole text, the way a spreadsheet cell does.
+// The editor is drawn in a layer over the whole artboard so scrolling lists and card edges never clip it.
+// Enter or clicking away keeps the change, Escape puts the old text back, Tab moves to the next cell.
+const CellLayer = createContext<{ layer: HTMLDivElement | null; scale: number }>({ layer: null, scale: 1 });
+const CELL_LINE = 22;
+const CELL_MIN_H = 3 * CELL_LINE + 24; // the editor is always at least three lines tall
+const WIDEN = 120; // a short cell (a part name) opens this much wider so it can be read
+
+const ExpandIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+);
+
+function Cell({ value, onChange, label, placeholder, widen, bold, span }: {
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+  placeholder?: string;
+  widen?: boolean;
+  bold?: boolean;
+  span?: boolean;
+}) {
+  const { layer, scale } = useContext(CellLayer);
+  const wrap = useRef<HTMLDivElement>(null);
+  const text = useRef<HTMLButtonElement>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const before = useRef(value);
+  const [over, setOver] = useState(false);
+  const [box, setBox] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  // Does the text fit on one line?
+  useEffect(() => {
+    const el = text.current;
+    if (!el) return;
+    const check = () => setOver(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [value]);
+
+  const open = () => {
+    const w = wrap.current;
+    if (!w || !layer) return;
+    const r = w.getBoundingClientRect();
+    const l = layer.getBoundingClientRect();
+    const left = (r.left - l.left) / scale;
+    const top = (r.top - l.top) / scale;
+    const width = Math.min(r.width / scale + (widen ? WIDEN : 0), STAGE_W - 24 - left);
+    before.current = value;
+    setBox({ left, top, width });
+  };
+  const close = (refocus?: boolean) => {
+    setBox(null);
+    if (refocus) requestAnimationFrame(() => text.current?.focus());
+  };
+
+  // Grow the editor to fit the text (at least three lines). Near the bottom of the artboard it opens upwards.
+  useLayoutEffect(() => {
+    const ta = editor.current;
+    if (!box || !ta) return;
+    ta.style.height = "0px";
+    const h = Math.min(Math.max(CELL_MIN_H, ta.scrollHeight + 4), STAGE_H - 32);
+    ta.style.height = `${h}px`;
+    ta.style.top = `${Math.max(16, Math.min(box.top, STAGE_H - 16 - h))}px`;
+  }, [box, value]);
+
+  // Anything that moves the cell (a list scrolling) closes the editor so it never floats away from it.
+  useEffect(() => {
+    if (!box) return;
+    const onScroll = (e: Event) => { if (e.target !== editor.current) setBox(null); };
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [box]);
+
+  const tabTo = (dir: 1 | -1) => {
+    const cells = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-cell]"));
+    const next = cells[cells.indexOf(text.current!) + dir];
+    close(!next);
+    if (next) requestAnimationFrame(() => next.click());
+  };
+
+  return (
+    <div ref={wrap} className={styles.cellWrap} data-span={span ? "" : undefined}>
+      <div className={styles.cell} data-open={box ? "" : undefined}>
+        <button ref={text} type="button" data-cell="" className={styles.cellText} data-bold={bold ? "" : undefined} data-empty={value ? undefined : ""} aria-label={label} title={over ? value : undefined} onClick={open}>
+          {value || placeholder}
+        </button>
+        {over && <button type="button" className={styles.cellExpand} aria-label={`Show all of ${label}`} tabIndex={-1} onClick={open}><ExpandIcon /></button>}
+      </div>
+      {box && layer && createPortal(
+        <textarea
+          ref={editor}
+          autoFocus
+          className={styles.cellEditor}
+          data-bold={bold ? "" : undefined}
+          aria-label={label}
+          placeholder={placeholder}
+          value={value}
+          style={{ left: box.left, width: box.width }}
+          onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+          onChange={(e) => onChange(e.target.value.replace(/\s*\n\s*/g, " "))}
+          onBlur={() => close()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); close(true); }
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onChange(before.current); close(true); }
+            if (e.key === "Tab") { e.preventDefault(); tabTo(e.shiftKey ? -1 : 1); }
+          }}
+        />,
+        layer,
+      )}
+    </div>
+  );
+}
+
+// ---- Section status: shown as a coloured dot in the section list and a label on the section -----------
+type Status = "good" | "attention" | "insufficient";
+const STATUS_TEXT: Record<Status, string> = { good: "Good", attention: "Needs Attention", insufficient: "Insufficient" };
+const PLACEHOLDER = /\[[^\]]*\]/; // "[X] h", "[competitor]": left for the exhibitor to fill in
+
+function sectionStatus(s: Section): Status {
+  const filled = s.rows.filter((r) => r.a.trim());
+  if (!s.title.trim() || filled.length === 0) return "insufficient";
+  if (s.needsReview || filled.length < s.rows.length || PLACEHOLDER.test([s.title, ...s.rows.flatMap((r) => [r.a, r.b])].join(" "))) return "attention";
+  return "good";
+}
+
+function StatusLabel({ status }: { status: Status }) {
+  return <span className={styles.status} data-status={status}><span className={styles.statusDot} />{STATUS_TEXT[status]}</span>;
+}
+
+// ---- Overflow: "Show all" opens the full text in a modal ------------------------------------
 type MoreItem = { title: string; content: ReactNode };
 const MoreContext = createContext<(item: MoreItem) => void>(() => {});
 
-/** Shows as much as fits; when the content is taller than the box it fades out and offers "… More". */
+/** Shows as much as fits; when the content is taller than the box it fades out and offers "Show all". */
 function Clamp({ title, children, full, className }: { title: string; children: ReactNode; full?: ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [over, setOver] = useState(false);
@@ -184,7 +316,7 @@ function Clamp({ title, children, full, className }: { title: string; children: 
       <div ref={ref} className={styles.clampInner}>{children}</div>
       {over && (
         <button type="button" className={styles.moreBtn} onClick={() => openMore({ title, content: full ?? children })}>
-          … More
+          Show all
         </button>
       )}
     </div>
@@ -247,6 +379,7 @@ export default function BusinessPage() {
   const [aiError, setAiError] = useState("");
   const [more, setMore] = useState<MoreItem | null>(null); // "… More" modal
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [cellLayer, setCellLayer] = useState<HTMLDivElement | null>(null); // where open text cells are drawn
 
   // Uploaded files live in this browser (IndexedDB): bring them back after a refresh.
   useEffect(() => {
@@ -377,7 +510,7 @@ export default function BusinessPage() {
     if (!docFile) {
       save({ ...config, aiBuilt: false });
       setNotice("No product doc uploaded, so this is the sample content.");
-      go({ name: "a-review" });
+      go({ name: "a-edit", id: config.sections[0].id });
       return;
     }
     setAiBusy(true);
@@ -396,7 +529,7 @@ export default function BusinessPage() {
       });
       save({ ...config, productName: json.productName || config.productName, sections, mappings: json.mappings?.length ? json.mappings : config.mappings, aiBuilt: true });
       setNotice(`Built from ${docFile.name}. Check anything marked “Needs a look”.`);
-      go({ name: "a-review" });
+      go({ name: "a-edit", id: config.sections[0].id });
     } catch {
       setAiError("Couldn't reach the AI. Check the connection and try again.");
     } finally {
@@ -447,26 +580,14 @@ export default function BusinessPage() {
   };
 
   // Progress steps for the current flow.
-  const autoStep = screen.name === "a-upload" ? 0 : screen.name === "a-review" || screen.name === "a-edit" ? 1 : 2;
+  const autoStep = screen.name === "a-upload" ? 0 : screen.name === "a-edit" ? 1 : 2;
   const manualStep = screen.name === "m-model" ? 0 : screen.name === "m-section" ? screen.index + 1 : 6;
-  const jumpAuto = (i: number) => go(i === 0 ? { name: "a-upload" } : i === 1 ? { name: "a-review" } : { name: "i-list" });
+  const jumpAuto = (i: number) => go(i === 0 ? { name: "a-upload" } : i === 1 ? { name: "a-edit", id: config.sections[0].id } : { name: "i-list" });
   const jumpManual = (i: number) => go(i === 0 ? { name: "m-model" } : i === 6 ? { name: "i-list" } : { name: "m-section", index: i - 1 });
   const stepper = mode === "auto"
     ? <Stepper total={3} current={autoStep} onJump={jumpAuto} wide />
-    : <Stepper total={7} current={manualStep} onJump={jumpManual} />;
-  const backFromGestures = () => go(mode === "auto" ? { name: "a-review" } : { name: "m-section", index: 4 });
-
-  const uploadedList = (extra: string[]) => {
-    const files = [model?.fileName || "orbit_earbuds.obj (sample)", ...extra];
-    return (
-      <div className={styles.uploaded}>
-        <div className={styles.uploadedHead}>UPLOADED</div>
-        <div className={styles.uploadedFiles}>
-          {files.map((f, i) => <span key={f + i} className={styles.uploadedFile}><span className={styles.numCircle}>{i + 1}</span>{f}</span>)}
-        </div>
-      </div>
-    );
-  };
+    : <Stepper total={7} current={manualStep} onJump={jumpManual} long />;
+  const backFromGestures = () => go(mode === "auto" ? { name: "a-edit", id: config.sections[0].id } : { name: "m-section", index: 4 });
 
   // ---- Screens ----------------------------------------------------------------
   let body: ReactNode = null;
@@ -518,7 +639,7 @@ export default function BusinessPage() {
         </div>
         {aiError ? (
           <p className={`${styles.manualHint} ${styles.aiError}`} role="alert">
-            {aiError} <button type="button" className={styles.textLink} onClick={() => { setAiError(""); save({ ...config, aiBuilt: false }); go({ name: "a-review" }); }}>Continue with sample content</button>
+            {aiError} <button type="button" className={styles.textLink} onClick={() => { setAiError(""); save({ ...config, aiBuilt: false }); go({ name: "a-edit", id: config.sections[0].id }); }}>Continue with sample content</button>
           </p>
         ) : (
           <p className={styles.manualHint}>Rather write it yourself? <button type="button" className={styles.textLink} onClick={() => switchMode("manual")}>Use manual setup</button></p>
@@ -535,72 +656,45 @@ export default function BusinessPage() {
     );
   }
 
-  if (screen.name === "a-review") {
-    const cards = [
-      ...config.sections.map((s) => ({
-        key: s.id, label: s.label.toUpperCase(), title: s.title,
-        body: s.rows.map((r) => r.a).join(" · "),
-        source: `From ${s.source ?? AUTO_META[s.id]?.source ?? "PRD"}`,
-        look: !!s.needsReview || s.rows.length < 3 || s.rows.some((r) => !r.a.trim()),
-        onEdit: () => go({ name: "a-edit", id: s.id }),
-        full: <SectionFull section={s} /> as ReactNode,
-      })),
-      {
-        key: "interactions", label: "INTERACTIONS", title: `${config.mappings.length} gestures mapped`,
-        body: "Swipe right steps through the parts. Swipe left goes back.", source: "From 3D model",
-        look: config.mappings.length === 0, onEdit: () => go({ name: "i-list" }),
-        full: undefined as ReactNode,
-      },
-    ];
-    const needLook = cards.filter((c) => c.look).length;
+  if (screen.name === "a-edit") {
+    const at = Math.max(0, config.sections.findIndex((x) => x.id === screen.id));
+    const s = config.sections[at];
+    const meta = AUTO_META[s.id];
+    const status = sectionStatus(s);
+    const gestureStatus: Status = config.mappings.length === 0 ? "insufficient" : "good";
+    const setRow = (i: number, patch: Partial<Row>) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, ...patch } : y)) }));
+    const next = config.sections[at + 1];
     body = (
       <>
         <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}.` : `Sample sections for ${config.documentName || "your product doc"}.`} Open any section to edit it.</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
-        <div className={styles.reviewGrid}>
-          {cards.map((c) => (
-            <div key={c.key} className={styles.reviewCard} data-look={c.look ? "" : undefined}>
-              <div className={styles.reviewHead}><b>{c.label}</b><span className={c.look ? styles.badgeLook : styles.badgeReady}>{c.look ? "Needs a look" : "Ready"}</span></div>
-              <Clamp className={styles.reviewClamp} title={c.label} full={c.full}>
-                <div className={styles.reviewTitle}>{c.title}</div>
-                <div className={styles.reviewBody}>{c.body}</div>
-              </Clamp>
-              <div className={styles.reviewFoot}><span className={styles.oneLine} title={c.source}>{c.source}</span><button type="button" className={styles.smallPill} onClick={c.onEdit}>EDIT</button></div>
-            </div>
-          ))}
-        </div>
-        <Foot back={{ label: "BACK", onClick: () => go({ name: "a-upload" }) }} next={<>
-          {needLook > 0 && <span className={styles.lookNote}>{needLook} section{needLook > 1 ? "s" : ""} need a look</span>}
-          <button type="button" className={styles.outlineBtn} onClick={() => go({ name: "i-list" })}>CHECK GESTURES <Arrow /></button>
-        </>} />
-        {!config.aiBuilt && <p className={styles.protoNote}>Sample content: upload a product doc and press Build my demo to have the AI write it</p>}
-      </>
-    );
-  }
-
-  if (screen.name === "a-edit") {
-    const s = config.sections.find((x) => x.id === screen.id) ?? config.sections[0];
-    const meta = AUTO_META[s.id];
-    body = (
-      <>
         <nav className={styles.sideNav} aria-label="Sections">
-          {config.sections.map((x) => (
-            <button key={x.id} type="button" className={styles.sideItem} aria-current={x.id === s.id ? "page" : undefined} onClick={() => go({ name: "a-edit", id: x.id })}>
-              {x.label}{x.rows.length < 3 && <span className={styles.lookDot} />}
-            </button>
-          ))}
-          <button type="button" className={styles.sideItem} onClick={() => go({ name: "i-list" })}>Interactions</button>
+          {config.sections.map((x) => {
+            const st = sectionStatus(x);
+            return (
+              <button key={x.id} type="button" className={styles.sideItem} aria-current={x.id === s.id ? "page" : undefined} title={STATUS_TEXT[st]} onClick={() => go({ name: "a-edit", id: x.id })}>
+                {x.label}<span className={styles.statusDot} data-status={st} aria-label={STATUS_TEXT[st]} />
+              </button>
+            );
+          })}
+          <button type="button" className={styles.sideItem} title={STATUS_TEXT[gestureStatus]} onClick={() => go({ name: "i-list" })}>
+            Interactions<span className={styles.statusDot} data-status={gestureStatus} aria-label={STATUS_TEXT[gestureStatus]} />
+          </button>
         </nav>
-        <div className={styles.guide} style={{ left: 308 }}><h1>{s.label.toUpperCase()}</h1><p>{meta?.kioskShows ?? "Edit what the kiosk shows"}</p></div>
         <div className={`${styles.card} ${styles.editCard}`}>
-          <label className={styles.fieldLabel} htmlFor="headline">HEADLINE</label>
-          <input id="headline" className={styles.field} value={s.title} onChange={(e) => updateSection(s.id, (x) => ({ ...x, title: e.target.value }))} />
+          <div className={styles.editHead}>
+            <h2>{s.label.toUpperCase()}</h2>
+            <StatusLabel status={status} />
+          </div>
+          <p className={styles.editHint}>{meta?.hint ?? "Edit what the kiosk shows"}</p>
+          <div className={styles.fieldLabel}>HEADLINE</div>
+          <div className={styles.cellGrid}><Cell span label="Headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} /></div>
           <div className={styles.fieldLabel}>ROWS</div>
           <div className={styles.editRows}>
             {s.rows.map((r, i) => (
               <div key={i} className={styles.editRow}>
-                <input className={`${styles.field} ${styles.fieldBold}`} aria-label={`Row ${i + 1} name`} value={r.a} onChange={(e) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, a: e.target.value } : y)) }))} />
-                <input className={styles.field} aria-label={`Row ${i + 1} line`} placeholder="One line" value={r.b} onChange={(e) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, b: e.target.value } : y)) }))} />
+                <Cell widen bold label={`Row ${i + 1} name`} value={r.a} onChange={(v) => setRow(i, { a: v })} />
+                <Cell label={`Row ${i + 1} line`} placeholder="One line" value={r.b} onChange={(v) => setRow(i, { b: v })} />
                 <button type="button" className={styles.remove} aria-label={`Remove row ${i + 1}`} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: x.rows.filter((_, j) => j !== i) }))}>×</button>
               </div>
             ))}
@@ -611,10 +705,10 @@ export default function BusinessPage() {
           </div>
         </div>
         <div className={`${styles.card} ${styles.quoteCard}`}>
-          <div className={`${styles.kicker} ${styles.oneLine}`} title={s.source ?? meta?.source}>FROM YOUR PRD · {(s.source ?? meta?.source ?? "").replace("PRD ", "").toUpperCase()}</div>
-          <Clamp className={styles.fill} title={`From your PRD · ${s.source ?? meta?.source ?? ""}`}>
+          <div className={`${styles.kicker} ${styles.oneLine}`} title={s.source ?? meta?.source}>{s.quote ? `FROM YOUR DOCUMENT${s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""}` : "SAMPLE EXCERPT"}</div>
+          <Clamp className={styles.fill} title={`From your document${s.source ? ` · ${s.source}` : ""}`}>
             <blockquote className={styles.quote}>“{s.quote ?? meta?.quote}”</blockquote>
-            <span className={styles.mutedSmall}>{s.needsReview && s.reviewNote ? `Needs a look: ${s.reviewNote}` : s.quote ? "From your document" : "Sample excerpt"}</span>
+            {s.needsReview && s.reviewNote && <span className={styles.lookNoteSmall}>Needs attention: {s.reviewNote}</span>}
           </Clamp>
         </div>
         <div className={`${styles.card} ${styles.kioskCard}`}>
@@ -623,9 +717,10 @@ export default function BusinessPage() {
             <KioskPreview section={s} small />
           </Clamp>
         </div>
-        <Foot back={{ label: "ALL SECTIONS", onClick: () => go({ name: "a-review" }) }} next={
-          <button type="button" className={styles.outlineBtn} onClick={() => { setNotice("Section saved."); go({ name: "a-review" }); }}>SAVE SECTION</button>
-        } />
+        <Foot back={{ label: "ALL SECTIONS", onClick: () => go({ name: "a-upload" }) }} next={<>
+          <button type="button" className={styles.outlineBtn} onClick={() => go({ name: "i-list" })}>CHECK GESTURES <Arrow /></button>
+          <button type="button" className={styles.outlineBtn} onClick={() => { setNotice(next ? `Saved. Next: ${next.label}.` : "Section saved."); if (next) go({ name: "a-edit", id: next.id }); }}>SAVE SECTION</button>
+        </>} />
       </>
     );
   }
@@ -634,28 +729,26 @@ export default function BusinessPage() {
     body = (
       <>
         <div className={styles.guide}><h1>UPLOAD</h1><p>Upload a 3D rendering or model of your product</p></div>
-        <div className={styles.manualLeft}>
-          <FileButton accept={MODEL_ACCEPT} className={`${styles.drop} ${styles.dropTall}`} onFile={onModelFile}>
-            {modelBusy ? <span className={styles.spinner} /> : <UploadIcon w={104} h={132} sw={1.4} />}
-            <b>{modelBusy ? "FINDING THE PARTS…" : model ? "REPLACE" : "UPLOAD"}</b>
-            <span>{model?.fileName || "glb, gltf, obj, fbx or stl"}</span>
-          </FileButton>
-        </div>
-        <div className={styles.manualRight}>
-          {stepper}
-          {uploadedList([])}
-          <div className={`${styles.card} ${styles.partsCard}`}>
-            <div className={styles.partsHead}>
-              <span className={styles.kicker} style={{ color: "#c8d8ff" }}>{model ? "PARTS IN YOUR MODEL" : "SAMPLE PARTS"}</span>
-              {model ? <button type="button" className={styles.textLink} onClick={useSampleModel}>Use sample</button> : <span className={styles.mutedSmall}>Orbit Earbuds</span>}
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <div className={styles.partsPreview}>{model ? <img className={styles.slideImg} src={model.whole} alt={`${model.fileName} preview`} /> : <PartDiagram selected={null} onPick={() => {}} />}</div>
-            <div className={`${styles.chips} ${styles.chipsScroll}`}>
-              {model
-                ? model.parts.map((p) => <span key={p.name} className={styles.chip}>{p.name}</span>)
-                : MODEL.parts.map((p) => <span key={p.id} className={styles.chip}>{p.id === "shell" ? "Shell" : PART_LABELS[p.id]}</span>)}
-            </div>
+        <div className={styles.progressAt}>{stepper}</div>
+        <FileButton accept={MODEL_ACCEPT} className={`${styles.drop} ${styles.manualLeft} ${styles.dropTall}`} onFile={onModelFile}>
+          {modelBusy ? <span className={styles.spinner} /> : <UploadIcon w={104} h={132} sw={1.4} />}
+          <b>{modelBusy ? "FINDING THE PARTS…" : model ? "REPLACE" : "UPLOAD"}</b>
+          <span>{model?.fileName || "glb, gltf, obj, fbx or stl"}</span>
+        </FileButton>
+        <div className={`${styles.card} ${styles.manualRight} ${styles.partsCard}`}>
+          <div className={styles.partsHead}>
+            <span className={styles.kicker} style={{ color: "#c8d8ff" }}>PARTS</span>
+            <span className={styles.partsFile}>
+              <span className={styles.oneLine}>{model?.fileName ?? "OrbitEarbuds.obj"}</span>
+              {model && <button type="button" className={styles.textLink} onClick={useSampleModel}>Use sample</button>}
+            </span>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <div className={styles.partsPreview}>{model ? <img className={styles.slideImg} src={model.whole} alt={`${model.fileName} preview`} /> : <PartDiagram selected={null} onPick={() => {}} />}</div>
+          <div className={`${styles.chips} ${styles.chipsScroll}`}>
+            {model
+              ? model.parts.map((p) => <span key={p.name} className={styles.chip}>{p.name}</span>)
+              : MODEL.parts.map((p) => <span key={p.id} className={styles.chip}>{p.id === "shell" ? "Shell" : PART_LABELS[p.id]}</span>)}
           </div>
         </div>
         <Foot next={<button type="button" className={styles.outlineBtn} onClick={() => go({ name: "m-section", index: 0 })}>NEXT <Arrow /></button>} />
@@ -665,54 +758,66 @@ export default function BusinessPage() {
 
   if (screen.name === "m-section") {
     const s = config.sections[screen.index];
-    const meta = AUTO_META[s.id];
-    const files = config.sections.slice(0, screen.index + 1).map((x) => config.sectionFiles[x.id]).filter(Boolean) as string[];
+    const file = config.sectionFiles[s.id];
+    const setFile = (name: string | null) => {
+      const sectionFiles = { ...config.sectionFiles };
+      if (name) sectionFiles[s.id] = name;
+      else delete sectionFiles[s.id];
+      save({ ...config, sectionFiles });
+    };
+    const setRow = (i: number, patch: Partial<Row>) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, ...patch } : y)) }));
     body = (
       <>
         <div className={styles.guide}><h1>{s.label.toUpperCase()}</h1><p>{PROMPTS[s.id] ?? "Describe this part of your product"}</p></div>
-        <div className={styles.manualLeft}>
-          <div className={`${styles.card} ${styles.uploadStrip}`}>
-            <FileButton accept=".pdf,.doc,.docx" className={styles.dropWide} onFile={(f) => pickFile(f, DOC, (n) => save({ ...config, sectionFiles: { ...config.sectionFiles, [s.id]: n } }))}>
-              <UploadIcon /><b>UPLOAD</b><span>{config.sectionFiles[s.id] || "pdf"}</span>
+        <div className={styles.progressAt}>{stepper}</div>
+        <div
+          className={`${styles.card} ${styles.manualLeft} ${styles.inputCard}`}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); pickFile(e.dataTransfer.files, DOC, setFile); }}
+        >
+          <label className={styles.cardTitle} htmlFor="paste">TYPE, PASTE, OR UPLOAD HERE</label>
+          <div className={styles.inputBox}>
+            {file && (
+              <div className={styles.fileChip}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+                <span className={styles.fileChipText}><b>{file}</b><span>{(file.split(".").pop() ?? "").toUpperCase()}</span></span>
+                <button type="button" aria-label={`Remove ${file}`} onClick={() => setFile(null)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                </button>
+              </div>
+            )}
+            <textarea id="paste" className={styles.inputText} placeholder={file ? "Add notes, or paste text here" : "Type here"} value={config.notes[s.id] ?? ""} onChange={(e) => save({ ...config, notes: { ...config.notes, [s.id]: e.target.value } })} />
+            <FileButton accept={DOC_ACCEPT} className={styles.attachBtn} disabled={!!file} onFile={(f) => pickFile(f, DOC, setFile)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" /></svg>
+              ATTACH PDF
             </FileButton>
           </div>
-          <div className={styles.or}>OR</div>
-          <div className={`${styles.card} ${styles.pasteCard}`}>
-            <label className={styles.cardTitle} htmlFor="paste">PASTE HERE</label>
-            <textarea id="paste" className={styles.textarea} placeholder="Type here" value={config.notes[s.id] ?? ""} onChange={(e) => save({ ...config, notes: { ...config.notes, [s.id]: e.target.value } })} />
-          </div>
+          <p className={styles.cardFoot}>pdf (up to 4MB), txt, md</p>
         </div>
-        <div className={styles.manualRight}>
-          {stepper}
-          {uploadedList(files)}
-          <div className={`${styles.card} ${styles.previewCard}`}>
-            <div className={styles.previewHead}>
-              <span className={styles.kicker} style={{ color: "#c8d8ff", fontWeight: 600 }}>AI PREVIEW · KIOSK PANEL</span>
-              <span className={styles.previewBtns}>
-                <button type="button" className={styles.smallPill} onClick={() => { updateSection(s.id, () => sampleSection(s.id)); setNotice("Restored the sample content for this section."); }}>REGENERATE</button>
-                <button type="button" className={styles.smallPill} aria-pressed={editingPreview} onClick={() => setEditingPreview((v) => !v)}>{editingPreview ? "DONE" : "EDIT"}</button>
-              </span>
-            </div>
-            {editingPreview ? (
-              <div className={styles.previewBox}>
-                <div className={styles.previewEdit}>
-                  <input className={styles.field} aria-label="Headline" value={s.title} onChange={(e) => updateSection(s.id, (x) => ({ ...x, title: e.target.value }))} />
-                  {s.rows.map((r, i) => (
-                    <div key={i} className={styles.previewEditRow}>
-                      <input className={styles.field} aria-label={`Row ${i + 1} name`} value={r.a} onChange={(e) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, a: e.target.value } : y)) }))} />
-                      <input className={styles.field} aria-label={`Row ${i + 1} line`} value={r.b} placeholder="One line" onChange={(e) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, b: e.target.value } : y)) }))} />
-                    </div>
-                  ))}
-                  <button type="button" className={styles.dashedBtn} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }] }))}>+ ADD ROW</button>
-                </div>
-              </div>
-            ) : (
-              <Clamp className={styles.fill} title={`AI preview · ${s.label}`} full={<SectionFull section={s} />}>
-                <KioskPreview section={{ ...s, label: `${String(screen.index + 1).padStart(2, "0")} · ${s.label}` }} />
-              </Clamp>
-            )}
-            <div className={styles.mutedSmall}>Format: {meta?.format}</div>
+        <div className={`${styles.card} ${styles.manualRight} ${styles.previewCard}`} data-editing={editingPreview ? "" : undefined}>
+          <div className={styles.previewHead}>
+            <span className={styles.previewTitle}>AI PREVIEW · KIOSK PANEL</span>
+            <span className={styles.previewBtns}>
+              <button type="button" className={styles.smallPill} onClick={() => { updateSection(s.id, () => sampleSection(s.id)); setNotice("Restored the sample content for this section."); }}>REGENERATE</button>
+              <button type="button" className={styles.smallPill} aria-pressed={editingPreview} onClick={() => setEditingPreview((v) => !v)}>{editingPreview ? "DONE" : "EDIT"}</button>
+            </span>
           </div>
+          {editingPreview ? (
+            <div className={styles.previewBox}>
+              <div className={styles.cellGrid}>
+                <Cell span label="Headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} />
+                {s.rows.map((r, i) => [
+                  <Cell key={`a${i}`} widen label={`Row ${i + 1} name`} value={r.a} onChange={(v) => setRow(i, { a: v })} />,
+                  <Cell key={`b${i}`} label={`What ${r.a || `row ${i + 1}`} does`} placeholder="One line" value={r.b} onChange={(v) => setRow(i, { b: v })} />,
+                ])}
+              </div>
+              <button type="button" className={styles.dashedBtn} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }] }))}>+ ADD ROW</button>
+            </div>
+          ) : (
+            <Clamp className={styles.fill} title={`AI preview · ${s.label}`} full={<SectionFull section={s} />}>
+              <KioskPreview flat section={{ ...s, label: `${String(screen.index + 1).padStart(2, "0")} · ${s.label}` }} />
+            </Clamp>
+          )}
         </div>
         <Foot
           back={{ label: "BACK", onClick: () => go(screen.index === 0 ? { name: "m-model" } : { name: "m-section", index: screen.index - 1 }) }}
@@ -778,6 +883,7 @@ export default function BusinessPage() {
 
   return (
     <MoreContext.Provider value={setMore}>
+    <CellLayer.Provider value={{ layer: cellLayer, scale }}>
     <main className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
@@ -791,6 +897,7 @@ export default function BusinessPage() {
           <button type="button" role="tab" aria-selected={mode === "manual"} onClick={() => switchMode("manual")}>MANUAL</button>
         </div>
         {body}
+        <div ref={setCellLayer} className={styles.cellLayer} />
         {notice && <div role="status" className={styles.toast}>{notice}</div>}
         {more && <Modal title={more.title} onClose={() => setMore(null)}>{more.content}</Modal>}
         {published && (
@@ -823,14 +930,15 @@ export default function BusinessPage() {
         )}
       </div>
     </main>
+    </CellLayer.Provider>
     </MoreContext.Provider>
   );
 }
 
 // What visitors will see for a section, in the kiosk's panel style.
-function KioskPreview({ section, small }: { section: Section; small?: boolean }) {
+function KioskPreview({ section, small, flat }: { section: Section; small?: boolean; flat?: boolean }) {
   return (
-    <div className={small ? `${styles.kioskPreview} ${styles.kioskPreviewSmall}` : styles.kioskPreview}>
+    <div className={`${styles.kioskPreview} ${small ? styles.kioskPreviewSmall : ""} ${flat ? styles.kioskPreviewFlat : ""}`}>
       <div className={styles.kioskKicker}>{section.label.toUpperCase()}</div>
       <div className={styles.kioskTitle}>{section.title}</div>
       {section.rows.map((r, i) => (
