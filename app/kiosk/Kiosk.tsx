@@ -1,20 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TOPICS, type PartId } from "@/lib/product";
-import { newSession, saveLead, type LeadMethod, type Session } from "@/lib/session";
+import { PART_TOPICS, TOPICS } from "@/lib/product";
+import { newSession, saveLead, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
-import { Hub, Lead, Staff } from "./Screens";
+import { Brochure, Contact, DemoContext, Hub, ModelFileContext, Team } from "./Screens";
+import { livePickers } from "./LiveModel";
+import { loadPublishedDemo, loadPublishedModelFile, type PublishedDemo } from "@/lib/published";
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
 const STAGE_W = 1280;
 const STAGE_H = 720;
 
-type Screen = "hub" | "staff" | "lead";
+type Screen = "hub" | "staff" | "brochure" | "contact";
 const DEFAULT_TOPIC = 1; // "How it works": the exploded earbud is the strongest first impression
 
 // Timing.
@@ -45,8 +47,10 @@ export default function Kiosk() {
   const [screen, setScreen] = useState<Screen>("hub");
   const [topic, setTopic] = useState(DEFAULT_TOPIC);
   const [present, setPresent] = useState(false); // someone is using the kiosk (else attract loop)
-  const [hoverPart, setHoverPart] = useState<PartId | null>(null); // a "how it works" row under the pointer
-  const [explode, setExplode] = useState(TOPICS[DEFAULT_TOPIC].explode);
+  // On "How it works" and "Specs": the row a visitor is pointing at or swiped to (its part lights up).
+  const [activeRow, setActiveRow] = useState<number | null>(null);
+  const [modelPart, setModelPart] = useState<string | null>(null); // the part of the model under the pointer
+  const [explode, setExplode] = useState(topicExplode(DEFAULT_TOPIC));
   // The session lives in a ref (time per topic grows every frame); screens get a snapshot of it.
   const [view, setView] = useState<Session>(newSession);
   const [handVisible, setHandVisible] = useState(false);
@@ -59,6 +63,36 @@ export default function Kiosk() {
   const [debug, setDebug] = useState<string | null>(null); // 'd': tracking rate and last swipe
   const [edge, setEdge] = useState<Edge | null>(null);
   const [camAspect, setCamAspect] = useState(16 / 9);
+  const [demo, setDemo] = useState<PublishedDemo | null>(null); // what the business portal published
+  const demoRef = useRef<PublishedDemo | null>(null);
+  useEffect(() => {
+    demoRef.current = demo;
+  }, [demo]);
+  const [modelFile, setModelFile] = useState<{ key: string; name: string; data: ArrayBuffer } | null>(null);
+
+  // Show what the business portal published; check for a newer version every minute.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => loadPublishedDemo().then((d) => {
+      if (!cancelled) setDemo((prev) => (d && prev?.publishedAt === d.publishedAt ? prev : d));
+    });
+    load();
+    const id = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // Fetch the published model file for the live 3D view (pictures show until it arrives).
+  const fileKey = demo?.model?.file ? `${demo.model.file.name}|${demo.model.file.path ?? ""}|${demo.publishedAt}` : "";
+  useEffect(() => {
+    if (!fileKey || !demo) return;
+    let cancelled = false;
+    loadPublishedModelFile(demo).then((f) => {
+      if (!cancelled && f) setModelFile({ key: fileKey, ...f });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the published file changes
+  }, [fileKey]);
+  const liveFile = modelFile && modelFile.key === fileKey ? modelFile : null;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -85,7 +119,9 @@ export default function Kiosk() {
     dwellSince: 0,
     dwellHit: 0,
     dwellFired: false,
-    hoverPart: null as PartId | null,
+    activeRow: null as number | null,
+    modelPart: null as string | null,
+    rowFromHover: false,
     edge: null as Edge | null,
     edgeSince: 0,
   });
@@ -107,10 +143,13 @@ export default function Kiosk() {
     (i: number, byVisitor = true) => {
       const n = TOPICS.length;
       i = ((i % n) + n) % n;
+      if (i !== ix.current.topic) {
+        // A new topic starts with no row picked (re-picking the same topic keeps it).
+        setActiveRow(null);
+        ix.current.activeRow = null;
+      }
       ix.current.topic = i;
       setTopic(i);
-      setHoverPart(null);
-      ix.current.hoverPart = null;
       if (byVisitor) {
         const picked = session.current.picked;
         if (!picked.includes(TOPICS[i].id)) picked.push(TOPICS[i].id);
@@ -125,7 +164,8 @@ export default function Kiosk() {
       ix.current.screen = to;
       if (to === "staff" && !session.current.staffAsked) session.current.staffAsked = Date.now();
       clearDwell(ix.current);
-      setHoverPart(null);
+      ix.current.activeRow = null;
+      setActiveRow(null);
       setScreen(to);
       bump();
     },
@@ -149,9 +189,10 @@ export default function Kiosk() {
   );
 
   const onSent = useCallback(
-    (method: LeadMethod) => {
-      session.current.sent = method;
-      saveLead(session.current, method);
+    (method: LeadMethod, kind: LeadKind) => {
+      if (kind === "brochure") session.current.sent = method;
+      else session.current.contacted = true;
+      saveLead(session.current, method, kind);
       bump();
     },
     [bump],
@@ -161,13 +202,19 @@ export default function Kiosk() {
   const onSwipe = useCallback(
     (dir: SwipeDir) => {
       markPresent(performance.now());
-      if (ix.current.screen !== "hub") {
-        if (dir === "right") go("hub");
-        return;
-      }
-      pickTopic(ix.current.topic + (dir === "left" || dir === "down" ? 1 : -1));
+      // Swipes only step through the rows of How it works and Specs (each lights its part). They never change topics
+      // or screens: visitors pick those by holding a hand over them.
+      const s = ix.current;
+      const tp = TOPICS[s.topic];
+      if (s.screen !== "hub" || !PART_TOPICS.has(tp.id) || (dir !== "up" && dir !== "down")) return;
+      const rows = demoRef.current?.sections.find((x) => x.id === tp.id)?.rows.length ?? tp.rows.length;
+      const next = dir === "down" ? (s.activeRow === null ? 0 : s.activeRow + 1) : s.activeRow === null ? rows - 1 : s.activeRow - 1;
+      const row = Math.min(Math.max(next, 0), rows - 1);
+      s.activeRow = row;
+      s.rowFromHover = false;
+      setActiveRow(row);
     },
-    [go, pickTopic, markPresent],
+    [markPresent],
   );
 
   // ---- Pointing: whatever the hand (or mouse) is over ------------------------
@@ -194,10 +241,23 @@ export default function Kiosk() {
     cursor?.toggleAttribute("data-over", !!target);
     cursor?.toggleAttribute("data-dwelling", !!target && !s.dwellFired);
 
-    const part = (hit?.closest("[data-part]")?.getAttribute("data-part") as PartId | null) ?? null;
-    if (part !== s.hoverPart) {
-      s.hoverPart = part;
-      setHoverPart(part);
+    // In swipe mode a hand picks rows by swiping, so its pointer doesn't also hover them.
+    if (source === "hand" && swipeModeRef.current) return;
+
+    // A part of the model under the pointer (sample earbud slices, or the uploaded model's 3D view).
+    let part: string | null = hit?.closest("[data-model-part]")?.getAttribute("data-model-part") ?? null;
+    if (!part && hit instanceof HTMLCanvasElement && hit.hasAttribute("data-live-model")) part = livePickers.get(hit)?.(x, y) ?? null;
+    if (part !== s.modelPart) {
+      s.modelPart = part;
+      setModelPart(part);
+    }
+
+    const rowEl = hit?.closest("[data-row]");
+    const row = rowEl ? Number(rowEl.getAttribute("data-row")) : null;
+    if (row !== null ? row !== s.activeRow : s.rowFromHover && s.activeRow !== null) {
+      s.activeRow = row;
+      s.rowFromHover = row !== null;
+      setActiveRow(row);
     }
   }, []);
 
@@ -206,9 +266,13 @@ export default function Kiosk() {
     clearDwell(s);
     cursorRef.current?.removeAttribute("data-over");
     cursorRef.current?.removeAttribute("data-dwelling");
-    if (s.hoverPart) {
-      s.hoverPart = null;
-      setHoverPart(null);
+    if (s.rowFromHover && s.activeRow !== null) {
+      s.activeRow = null;
+      setActiveRow(null);
+    }
+    if (s.modelPart) {
+      s.modelPart = null;
+      setModelPart(null);
     }
   }, []);
 
@@ -233,7 +297,8 @@ export default function Kiosk() {
       // While teaching, frames go to the teach screen instead.
       const teach = teachSink.current;
       if (teach) teach(now, hand ? hand.palmX * hand.aspect : null, hand ? hand.palmY : null);
-      const swiping = swipeModeRef.current;
+      // Swipes are only read on How it works / Specs; everywhere else the hand just points.
+      const swiping = swipeModeRef.current && s.screen === "hub" && PART_TOPICS.has(TOPICS[s.topic].id);
 
       if (!hand) {
         const swipe = teach || !swiping ? null : swipes.current?.lost(now);
@@ -285,7 +350,7 @@ export default function Kiosk() {
       s.y += (ty - s.y) * (1 - SMOOTHING);
       markPresent(now);
 
-      if (swiping || teach) return;
+      if (teach) return;
       if (cursor) {
         cursor.style.opacity = "1";
         cursor.style.transform = `translate(${s.x}px, ${s.y}px)`;
@@ -327,10 +392,32 @@ export default function Kiosk() {
       if (ix.current.hasPos || e.pointerType === "touch") return; // a tracked hand takes priority
       pointAt(e.clientX, e.clientY, "mouse", now);
     };
-    const down = () => markPresent(performance.now());
+    const down = (e: PointerEvent) => {
+      const now = performance.now();
+      markPresent(now);
+      // Taps: pick the row or model part under the finger (touch has no hover).
+      if (e.pointerType === "touch") pointAt(e.clientX, e.clientY, "mouse", now);
+    };
+    // Staff shortcuts are chords on C (held) so a visitor can't trigger them by accident:
+    // C + Space camera on/off · C + Option/Alt + Space camera view · C + S swipe mode.
+    const held = new Set<string>();
+    const up = (e: KeyboardEvent) => held.delete(e.code);
+    const blur = () => held.clear();
     const key = (e: KeyboardEvent) => {
       if ((e.target as Element).closest("input, textarea")) return; // typing an email
       markPresent(performance.now());
+      held.add(e.code);
+      if (held.has("KeyC") && e.code === "Space") {
+        e.preventDefault();
+        if (e.altKey) setShowSelf((v) => !v);
+        else setCameraOn((v) => !v);
+        return;
+      }
+      if (held.has("KeyC") && e.code === "KeyS") {
+        e.preventDefault();
+        toggleSwipeMode();
+        return;
+      }
       if (KEY_DIRS[e.key] && !teachSink.current) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes
       if (e.key === "t" && swipeModeRef.current) {
         setHasSaved(hasSavedSwipeOptions());
@@ -343,8 +430,6 @@ export default function Kiosk() {
         dbg.text = "";
         setDebug(dbg.on ? `LAST: ${dbg.last}` : null);
       }
-      if (e.key === "c") setShowSelf((v) => !v);
-      if (e.key === "o") setCameraOn((v) => !v);
       if (e.key === "r") resetVisitor(); // staff: start fresh for the next visitor
       if (e.key === "f") {
         if (document.fullscreenElement) document.exitFullscreen();
@@ -354,20 +439,24 @@ export default function Kiosk() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerdown", down);
     window.addEventListener("keydown", key);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
     document.documentElement.addEventListener("pointerleave", pointerGone);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener("keydown", key);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
       document.documentElement.removeEventListener("pointerleave", pointerGone);
     };
-  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor]);
+  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor, toggleSwipeMode]);
 
   // ---- Frame loop: dwell, time per topic, attract loop, reset, explode easing ----
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
-    let cur = TOPICS[ix.current.topic].explode;
+    let cur = topicExplode(ix.current.topic);
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
@@ -404,7 +493,7 @@ export default function Kiosk() {
         resetVisitor();
       }
 
-      const target = TOPICS[s.topic].explode;
+      const target = topicExplode(s.topic);
       if (cur !== target) {
         cur += (target - cur) * (1 - Math.exp(-dt / 1000 / TAU_EXPLODE));
         if (Math.abs(target - cur) < 0.003) cur = target;
@@ -432,11 +521,23 @@ export default function Kiosk() {
     : !camOk
       ? { title: "TOUCH OR HOVER OVER A TOPIC", sub: "Pick in any order" }
       : swipeMode
-        ? { title: handVisible ? "SWIPE LEFT FOR THE NEXT TOPIC" : "RAISE A HAND, THEN SWIPE", sub: "Swipe right to go back a topic" }
+        ? { title: "HOLD YOUR HAND OVER A TOPIC", sub: "On How it works and Specs, swipe up or down through the parts" }
         : { title: "HOLD YOUR HAND OVER A TOPIC", sub: "It opens after a second · pick in any order" };
+
+  // On How it works / Specs, tell visitors the rows respond.
+  const partTopic = present && PART_TOPICS.has(TOPICS[topic].id);
+  const rowGuide = !partTopic
+    ? guide
+    : !camOk
+      ? { title: "TOUCH OR HOVER OVER A PART", sub: "On the model or in the list: the other lights up too" }
+      : swipeMode
+        ? { title: handVisible ? "SWIPE UP OR DOWN THROUGH THE PARTS" : "RAISE A HAND, THEN SWIPE", sub: "Hold your hand over a topic to switch" }
+        : { title: "POINT AT A PART OR A ROW", sub: "The matching part and details light up" };
 
   const s = view;
   return (
+    <DemoContext.Provider value={demo}>
+    <ModelFileContext.Provider value={liveFile}>
     <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
@@ -445,67 +546,58 @@ export default function Kiosk() {
           <Hub
             topic={topic}
             onPick={(i) => pickTopic(i)}
-            hoverPart={hoverPart}
+            activeRow={activeRow}
+            modelPart={modelPart}
+            onRow={(i) => { ix.current.activeRow = i; ix.current.rowFromHover = false; setActiveRow(i); }}
             explode={explode}
             accent={ACCENT}
-            guide={{ ...guide, sub: tip ?? guide.sub, tip: !!tip }}
+            guide={{ ...rowGuide, sub: tip ?? rowGuide.sub, tip: !!tip }}
             attract={!present}
             onTeam={() => go("staff")}
-            onBrochure={() => go("lead")}
+            onBrochure={() => go("brochure")}
+            onContact={() => go("contact")}
           />
         )}
         {screen === "staff" && (
-          <Staff
-            session={s}
-            onBack={() => go("hub")}
-            onLead={() => go("lead")}
-            onAccept={() => updateSession({ staffAccepted: true })}
-            onPass={() => updateSession({ staff: s.staff + 1, staffAccepted: false })}
-          />
+          <Team session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} accent={ACCENT} />
         )}
-        {screen === "lead" && (
-          <Lead session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} onTeam={() => go("staff")} />
+        {screen === "brochure" && (
+          <Brochure session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} accent={ACCENT} />
+        )}
+        {screen === "contact" && (
+          <Contact session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} onBrochure={() => go("brochure")} accent={ACCENT} />
         )}
 
-        {/* Kiosk controls (top-right, above the "Talk to our team" link). */}
-        <div className={styles.controls}>
-          <span
-            className={styles.statusDot}
-            data-status={status}
-            title={STATUS_TEXT[status]}
-            style={status === "tracking" ? { background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` } : undefined}
-          />
-          <span className={styles.statusText}>{debug ?? (camOk ? (swipeMode ? "SWIPE ← →" : "POINT & HOLD") : STATUS_TEXT[status])}</span>
-          {camOk && (
-            <button
-              type="button"
-              className={styles.modeToggle}
-              role="switch"
-              aria-checked={swipeMode}
-              onClick={toggleSwipeMode}
-              title="Off: hold your hand over a topic to open it. On: swipe to flip through topics."
-            >
-              SWIPE
-              <span className={styles.switchTrack}>
-                <span className={styles.switchKnob} />
-              </span>
-            </button>
-          )}
-          {camOk && (
-            <button type="button" className={styles.camToggle} aria-pressed={showSelf} onClick={() => setShowSelf((v) => !v)}>
-              {showSelf ? "HIDE CAMERA VIEW" : "CAMERA VIEW"}
-            </button>
-          )}
-          <button
-            type="button"
-            className={styles.camToggle}
-            aria-pressed={!cameraOn}
-            data-off={cameraOn ? undefined : ""}
-            onClick={() => setCameraOn((v) => !v)}
-          >
-            {cameraOn ? "CAMERA OFF" : "CAMERA ON"}
+        {/* Staff shortcuts reminder (top right): hover or focus to see the key chords. */}
+        <div className={styles.shortcuts}>
+          <button type="button" className={styles.shortcutsIcon} aria-label="Keyboard shortcuts" aria-describedby="kiosk-shortcuts">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2.5" y="6" width="19" height="12" rx="2" />
+              <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9" />
+            </svg>
+            <span
+              className={styles.statusDot}
+              data-status={status}
+              style={status === "tracking" ? { background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` } : undefined}
+            />
           </button>
+          <div id="kiosk-shortcuts" role="tooltip" className={styles.shortcutsTip}>
+            <div className={styles.tipStatus}>
+              {STATUS_TEXT[status]}{camOk ? ` · ${swipeMode ? "SWIPE" : "POINT & HOLD"}` : ""}
+            </div>
+            <dl>
+              <dt><kbd>C</kbd> + <kbd>Space</kbd></dt><dd>Camera {cameraOn ? "off" : "on"}</dd>
+              <dt><kbd>C</kbd> + <kbd>⌥ Option</kbd> + <kbd>Space</kbd></dt><dd>{showSelf ? "Hide" : "Show"} camera view</dd>
+              <dt><kbd>C</kbd> + <kbd>S</kbd></dt><dd>Swipe mode {swipeMode ? "off" : "on"}</dd>
+              <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Act like swipes</dd>
+              <dt><kbd>T</kbd></dt><dd>Teach swipes (swipe mode)</dd>
+              <dt><kbd>R</kbd></dt><dd>Start fresh</dd>
+              <dt><kbd>F</kbd></dt><dd>Full screen</dd>
+              <dt><kbd>D</kbd></dt><dd>Tracking debug</dd>
+            </dl>
+          </div>
         </div>
+        {debug && <div className={styles.debugLine}>{debug}</div>}
 
         <div
           className={teaching && camOk ? `${styles.cam} ${styles.camTeach}` : styles.cam}
@@ -534,7 +626,7 @@ export default function Kiosk() {
 
       {/* Hand pointer (pointing mode). Outside the scaled stage so it maps 1:1 to the screen.
           Its ring fills while the hand holds over something that can be pressed. */}
-      {!swipeMode && camOk && (
+      {camOk && (
         <>
           <svg className={styles.trail} aria-hidden="true">
             <polyline ref={trailRef} fill="none" stroke={ACCENT} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
@@ -549,7 +641,14 @@ export default function Kiosk() {
         </>
       )}
     </div>
+    </ModelFileContext.Provider>
+    </DemoContext.Provider>
   );
+}
+
+/** Only How it works and Specs move the model; every other topic shows it whole. */
+function topicExplode(i: number) {
+  return PART_TOPICS.has(TOPICS[i].id) ? TOPICS[i].explode : 0;
 }
 
 function clearDwell(s: { dwellEl: HTMLElement | null; dwellFired: boolean }) {
