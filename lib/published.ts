@@ -28,6 +28,9 @@ const DB = "playform";
 const STORE = "files";
 const KEY = "published";
 export const MAX_SERVER_BYTES = 4_000_000; // Vercel caps request bodies at 4.5 MB
+/** Every kiosk section shows a headline and at most this many rows. */
+export const MAX_ROWS = 5;
+const capRows = (d: PublishedDemo): PublishedDemo => ({ ...d, sections: d.sections.map((s) => ({ ...s, rows: s.rows.slice(0, MAX_ROWS) })) });
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -94,8 +97,8 @@ export async function loadPublishedDemo(): Promise<PublishedDemo | null> {
   } catch {
     /* offline: expo Wi-Fi */
   }
-  if (local && remote) return Date.parse(remote.publishedAt) >= Date.parse(local.publishedAt) ? remote : local;
-  return remote ?? local;
+  const newest = local && remote ? (Date.parse(remote.publishedAt) >= Date.parse(local.publishedAt) ? remote : local) : (remote ?? local);
+  return newest && capRows(newest);
 }
 
 export async function unpublishLocal() {

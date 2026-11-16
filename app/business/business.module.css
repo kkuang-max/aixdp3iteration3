@@ -1071,6 +1071,7 @@
   color: #aeb4c6;
 }
 
+/* Room around the rows so a highlighted row's box is never clipped by the scrolling list. */
 .gestureRows {
   flex: 1;
   min-height: 0;
@@ -1078,7 +1079,8 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 12px 4px 4px;
+  margin: 0 -8px;
+  padding: 12px 12px 6px;
 }
 
 .gestureName {
@@ -1811,4 +1813,86 @@
 
 .cellEditor::placeholder {
   color: #9aa0b3;
+}
+
+/* Manual: a scrolling preview keeps its fade only until the end is in view. */
+.clampInner[data-scroll] {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(200, 216, 255, 0.35) transparent;
+}
+
+.clampInner[data-scroll]:focus-visible {
+  outline: 2px solid rgba(200, 216, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.clamp:has(.clampInner[data-scroll]) .moreBtn {
+  right: 10px;
+}
+
+/* Manual: send what was typed, pasted or attached to the AI. */
+.inputFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -6px;
+}
+
+.submitBtn {
+  height: 38px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 999px;
+  background: #c8d8ff;
+  color: #1b2036 !important;
+  font-size: 12px !important;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: #dfe8ff;
+}
+
+.submitBtn:disabled {
+  opacity: 0.4;
+  cursor: default !important;
+}
+
+.previewCard {
+  position: relative;
+}
+
+.previewBusy {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 0 40px;
+  border-radius: inherit;
+  background: rgba(13, 17, 28, 0.82);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  font-size: 15px;
+  color: #c9cfdd;
+}
+
+.previewBusy b {
+  font-size: 18px;
+  font-weight: 600;
+  color: #eef1f8;
+}
+
+.dashedBtn:disabled {
+  opacity: 0.35;
+  cursor: default !important;
 }

@@ -123,9 +123,13 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
   GLB or OBJ first. The file is kept in this browser (IndexedDB), so a refresh doesn't lose it.
 - **AI setup:** "Build my demo" sends the product doc (PDF up to 4 MB, `.txt` or `.md`) and the model's part names to
   `POST /api/build-demo`, where Claude (`claude-opus-5-5`, structured output) writes the five sections (with the page
-  and a quote it used, and "Needs a look" where the doc is missing facts) and a gesture → part sequence.
+  and a quote it used, and "Needs attention" where the doc is missing facts) and a gesture → part sequence.
   It needs an Anthropic API key on the server: add `ANTHROPIC_API_KEY` in Vercel → Project → Settings → Environment
   Variables (or `.env.local` for `npm run dev`) and redeploy. Without it the page says so and offers the sample content.
+- **Manual setup with AI:** instead of one PRD, each manual section has a "Type, paste, or upload here" box. Type or
+  paste notes and/or attach a PDF, `.txt` or `.md`, then press **Submit**: `POST /api/build-section` has Claude format
+  just that section into a headline and rows, shown in the AI preview where it can be edited. Same API key.
+- **Rows:** every section has a headline and at most 5 rows, in the portal, from the AI and on the kiosk.
 
 ## Publishing to the kiosk
 
@@ -158,6 +162,8 @@ kiosk keeps the last published demo until you publish again.
 - `app/kiosk/LiveModel.tsx` — the uploaded model drawn live on the kiosk.
 - `lib/published.ts` + `app/api/kiosk-config/route.ts` — the published demo (browser copy + Vercel Blob).
 - `app/api/build-demo/route.ts` — the AI route (Claude reads the product doc and drafts the demo).
+- `app/api/build-section/route.ts` — manual setup's AI route (Claude formats one section from typed notes or a file).
+- `lib/aiServer.ts` — shared by both AI routes: the 5-row cap, reading the attached file, error messages.
 - `app/business/page.tsx` — business portal (`/business`): auto setup (default) or manual setup, then gesture mapping.
   Timing constants are at the top.
 - `app/kiosk/Screens.tsx` — the hub, team, brochure and contact screens. `Model3D.tsx` renders the earbud.

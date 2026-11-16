@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { MODEL, TOPICS, type PartId } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
-import { publishDemo, publishModelFile, shrinkImage, type PublishedDemo } from "@/lib/published";
+import { MAX_ROWS, publishDemo, publishModelFile, shrinkImage, type PublishedDemo } from "@/lib/published";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -298,22 +298,31 @@ function StatusLabel({ status }: { status: Status }) {
 type MoreItem = { title: string; content: ReactNode };
 const MoreContext = createContext<(item: MoreItem) => void>(() => {});
 
-/** Shows as much as fits; when the content is taller than the box it fades out and offers "Show all". */
-function Clamp({ title, children, full, className }: { title: string; children: ReactNode; full?: ReactNode; className?: string }) {
+/** Shows as much as fits; when the content is taller than the box it fades out and offers "Show all".
+ *  With `scroll`, the box also scrolls, and the fade goes away once the end is in view. */
+function Clamp({ title, children, full, className, scroll }: { title: string; children: ReactNode; full?: ReactNode; className?: string; scroll?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [over, setOver] = useState(false);
+  const [atEnd, setAtEnd] = useState(false);
   const openMore = useContext(MoreContext);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setOver(el.scrollHeight > el.clientHeight + 2));
+    const ro = new ResizeObserver(() => {
+      setOver(el.scrollHeight > el.clientHeight + 2);
+      setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
+    });
     ro.observe(el);
     Array.from(el.children).forEach((c) => ro.observe(c));
     return () => ro.disconnect();
   });
+  const onScroll = () => {
+    const el = ref.current;
+    if (el) setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
+  };
   return (
-    <div className={`${styles.clamp} ${className ?? ""}`} data-over={over ? "" : undefined}>
-      <div ref={ref} className={styles.clampInner}>{children}</div>
+    <div className={`${styles.clamp} ${className ?? ""}`} data-over={over && !(scroll && atEnd) ? "" : undefined}>
+      <div ref={ref} className={styles.clampInner} data-scroll={scroll ? "" : undefined} onScroll={scroll ? onScroll : undefined} tabIndex={scroll && over ? 0 : undefined}>{children}</div>
       {over && (
         <button type="button" className={styles.moreBtn} onClick={() => openMore({ title, content: full ?? children })}>
           Show all
@@ -351,13 +360,7 @@ function SectionFull({ section }: { section: Section }) {
       {section.rows.map((r, i) => (
         <div key={i} className={styles.fullRow}><b>{r.a || "—"}</b>{r.b && <span>{r.b}</span>}</div>
       ))}
-      {(section.source || section.quote) && (
-        <div className={styles.fullSource}>
-          {section.source && <span className={styles.kicker}>FROM YOUR PRD · {section.source.toUpperCase()}</span>}
-          {section.quote && <blockquote className={styles.quote}>“{section.quote}”</blockquote>}
-        </div>
-      )}
-      {section.needsReview && section.reviewNote && <p className={styles.fullNote}>Needs a look: {section.reviewNote}</p>}
+      {section.needsReview && section.reviewNote && <p className={styles.fullNote}>Needs attention: {section.reviewNote}</p>}
     </div>
   );
 }
@@ -380,6 +383,8 @@ export default function BusinessPage() {
   const [more, setMore] = useState<MoreItem | null>(null); // "… More" modal
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [cellLayer, setCellLayer] = useState<HTMLDivElement | null>(null); // where open text cells are drawn
+  const [sectionDocs, setSectionDocs] = useState<Record<string, File>>({}); // manual: the file attached to each section
+  const [formatting, setFormatting] = useState<string | null>(null); // manual: section the AI is formatting
 
   // Uploaded files live in this browser (IndexedDB): bring them back after a refresh.
   useEffect(() => {
@@ -387,6 +392,12 @@ export default function BusinessPage() {
     (async () => {
       const doc = await loadFile("doc");
       if (doc && !cancelled) setDocFile(new File([doc.data], doc.name, { type: doc.type }));
+      const docs: Record<string, File> = {};
+      for (const t of TOPICS) {
+        const f = await loadFile(`section-${t.id}`);
+        if (f) docs[t.id] = new File([f.data], f.name, { type: f.type });
+      }
+      if (!cancelled) setSectionDocs(docs);
       const stored = await loadFile("model");
       if (!stored || cancelled) return;
       setModelBusy(true);
@@ -407,7 +418,9 @@ export default function BusinessPage() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const saved = JSON.parse(raw) as Partial<BusinessConfig>;
-        if (saved && Array.isArray(saved.sections) && Array.isArray(saved.mappings)) setConfig({ ...defaultConfig, ...saved });
+        if (saved && Array.isArray(saved.sections) && Array.isArray(saved.mappings)) {
+          setConfig({ ...defaultConfig, ...saved, sections: saved.sections.map((s) => ({ ...s, rows: s.rows.slice(0, MAX_ROWS) })) });
+        }
       }
     } catch { /* start fresh when storage is unavailable */ }
   }, []);
@@ -433,12 +446,6 @@ export default function BusinessPage() {
   const updateSection = (id: string, fn: (s: Section) => Section) => save({ ...config, sections: config.sections.map((s) => (s.id === id ? fn(s) : s)) });
   const updateMapping = (i: number, patch: Partial<Mapping>) => save({ ...config, mappings: config.mappings.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
 
-  const pickFile = (files: FileList | null, allowed: RegExp, apply: (name: string) => void) => {
-    const file = files?.[0];
-    if (!file) return;
-    if (!allowed.test(file.name)) { setNotice("Unsupported file type. Choose one of the listed formats."); return; }
-    apply(file.name); // only the file name is kept: files are not uploaded or analysed in this prototype
-  };
   const DOC = /\.(pdf|txt|md)$/i;
   const DOC_ACCEPT = ".pdf,.txt,.md";
 
@@ -492,7 +499,8 @@ export default function BusinessPage() {
   const restart = async () => {
     setConfirmRestart(false);
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* nothing saved */ }
-    await Promise.all([deleteFile("model"), deleteFile("doc")]);
+    await Promise.all([deleteFile("model"), deleteFile("doc"), ...TOPICS.map((t) => deleteFile(`section-${t.id}`))]);
+    setSectionDocs({});
     setConfig(defaultConfig);
     setModel(null);
     setDocFile(null);
@@ -525,15 +533,67 @@ export default function BusinessPage() {
       if (!res.ok) { setAiError(json.error ?? `The AI request failed (${res.status}).`); return; }
       const sections = config.sections.map((s) => {
         const ai = (json.sections as (Partial<Section> & { id: string })[]).find((x) => x.id === s.id);
-        return ai ? { ...s, title: ai.title ?? s.title, rows: ai.rows ?? s.rows, source: ai.source, quote: ai.quote, needsReview: ai.needsReview, reviewNote: ai.reviewNote } : s;
+        return ai ? { ...s, title: ai.title ?? s.title, rows: (ai.rows ?? s.rows).slice(0, MAX_ROWS), source: ai.source, quote: ai.quote, needsReview: ai.needsReview, reviewNote: ai.reviewNote } : s;
       });
       save({ ...config, productName: json.productName || config.productName, sections, mappings: json.mappings?.length ? json.mappings : config.mappings, aiBuilt: true });
-      setNotice(`Built from ${docFile.name}. Check anything marked “Needs a look”.`);
+      setNotice(`Built from ${docFile.name}. Check anything marked “Needs attention”.`);
       go({ name: "a-edit", id: config.sections[0].id });
     } catch {
       setAiError("Couldn't reach the AI. Check the connection and try again.");
     } finally {
       setAiBusy(false);
+    }
+  };
+
+  // Manual: a file attached to one section, kept in the browser so the AI can read it.
+  const attachSectionFile = async (id: string, files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    if (/\.docx?$/i.test(file.name)) { setNotice("Word files: save as PDF first, then attach the PDF."); return; }
+    if (!DOC.test(file.name)) { setNotice("Attach a PDF, or a .txt / .md file."); return; }
+    if (file.size > 4 * 1024 * 1024) { setNotice("That file is over 4 MB. Try a smaller PDF."); return; }
+    setSectionDocs((d) => ({ ...d, [id]: file }));
+    save({ ...config, sectionFiles: { ...config.sectionFiles, [id]: file.name } });
+    try { await saveFile(`section-${id}`, { name: file.name, type: file.type, data: await file.arrayBuffer() }); } catch { /* kept until refresh */ }
+  };
+  const removeSectionFile = async (id: string) => {
+    setSectionDocs((d) => { const next = { ...d }; delete next[id]; return next; });
+    const sectionFiles = { ...config.sectionFiles };
+    delete sectionFiles[id];
+    save({ ...config, sectionFiles });
+    await deleteFile(`section-${id}`);
+  };
+  // Manual: the AI turns whatever was typed, pasted or attached for one section into that section's kiosk copy.
+  const formatSection = async (id: string) => {
+    const notes = (config.notes[id] ?? "").trim();
+    const file = sectionDocs[id];
+    if (!notes && !file) {
+      setNotice(config.sectionFiles[id] ? `Attach ${config.sectionFiles[id]} again so the AI can read it.` : "Type, paste or attach something first.");
+      return;
+    }
+    setFormatting(id);
+    setEditingPreview(false);
+    const form = new FormData();
+    form.append("sectionId", id);
+    form.append("notes", notes);
+    if (file) form.append("document", file);
+    form.append("productName", config.productName);
+    form.append("parts", JSON.stringify(model?.parts.map((p) => p.name) ?? []));
+    try {
+      const res = await fetch("/api/build-section", { method: "POST", body: form });
+      const json = await res.json().catch(() => ({ error: `The AI request failed (${res.status}).` }));
+      if (!res.ok) { setNotice(json.error ?? `The AI request failed (${res.status}).`); return; }
+      updateSection(id, (x) => ({
+        ...x,
+        title: json.title || x.title,
+        rows: Array.isArray(json.rows) && json.rows.length ? (json.rows as Row[]).slice(0, MAX_ROWS) : x.rows,
+        source: json.source, quote: json.quote, needsReview: json.needsReview, reviewNote: json.reviewNote,
+      }));
+      setNotice(json.needsReview ? "Formatted. Some facts are missing: look for the [brackets]." : "Formatted. Edit anything in the preview.");
+    } catch {
+      setNotice("Couldn't reach the AI. Check the connection and try again.");
+    } finally {
+      setFormatting(null);
     }
   };
 
@@ -565,7 +625,7 @@ export default function BusinessPage() {
         version: 1,
         publishedAt: new Date().toISOString(),
         productName: config.productName,
-        sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows })),
+        sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows: rows.slice(0, MAX_ROWS) })),
         mappings: config.mappings,
         model: pictures,
       };
@@ -700,7 +760,7 @@ export default function BusinessPage() {
             ))}
           </div>
           <div className={styles.editButtons}>
-            <button type="button" className={styles.dashedBtn} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }] }))}>+ ADD ROW</button>
+            <button type="button" className={styles.dashedBtn} disabled={s.rows.length >= MAX_ROWS} title={s.rows.length >= MAX_ROWS ? `${MAX_ROWS} rows at most` : undefined} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }].slice(0, MAX_ROWS) }))}>+ ADD ROW</button>
             <button type="button" className={styles.outlineSmall} onClick={() => { updateSection(s.id, () => sampleSection(s.id)); setNotice("Restored the sample content for this section."); }}>REGENERATE</button>
           </div>
         </div>
@@ -759,12 +819,8 @@ export default function BusinessPage() {
   if (screen.name === "m-section") {
     const s = config.sections[screen.index];
     const file = config.sectionFiles[s.id];
-    const setFile = (name: string | null) => {
-      const sectionFiles = { ...config.sectionFiles };
-      if (name) sectionFiles[s.id] = name;
-      else delete sectionFiles[s.id];
-      save({ ...config, sectionFiles });
-    };
+    const busy = formatting === s.id;
+    const hasInput = !!(config.notes[s.id] ?? "").trim() || !!file;
     const setRow = (i: number, patch: Partial<Row>) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, ...patch } : y)) }));
     body = (
       <>
@@ -773,7 +829,7 @@ export default function BusinessPage() {
         <div
           className={`${styles.card} ${styles.manualLeft} ${styles.inputCard}`}
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); pickFile(e.dataTransfer.files, DOC, setFile); }}
+          onDrop={(e) => { e.preventDefault(); attachSectionFile(s.id, e.dataTransfer.files); }}
         >
           <label className={styles.cardTitle} htmlFor="paste">TYPE, PASTE, OR UPLOAD HERE</label>
           <div className={styles.inputBox}>
@@ -781,18 +837,23 @@ export default function BusinessPage() {
               <div className={styles.fileChip}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
                 <span className={styles.fileChipText}><b>{file}</b><span>{(file.split(".").pop() ?? "").toUpperCase()}</span></span>
-                <button type="button" aria-label={`Remove ${file}`} onClick={() => setFile(null)}>
+                <button type="button" aria-label={`Remove ${file}`} onClick={() => removeSectionFile(s.id)}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
                 </button>
               </div>
             )}
             <textarea id="paste" className={styles.inputText} placeholder={file ? "Add notes, or paste text here" : "Type here"} value={config.notes[s.id] ?? ""} onChange={(e) => save({ ...config, notes: { ...config.notes, [s.id]: e.target.value } })} />
-            <FileButton accept={DOC_ACCEPT} className={styles.attachBtn} disabled={!!file} onFile={(f) => pickFile(f, DOC, setFile)}>
+            <FileButton accept={DOC_ACCEPT} className={styles.attachBtn} disabled={!!file} onFile={(f) => attachSectionFile(s.id, f)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" /></svg>
               ATTACH PDF
             </FileButton>
           </div>
-          <p className={styles.cardFoot}>pdf (up to 4MB), txt, md</p>
+          <div className={styles.inputFoot}>
+            <p className={styles.cardFoot}>pdf (up to 4MB), txt, md</p>
+            <button type="button" className={styles.submitBtn} disabled={!hasInput || busy} onClick={() => formatSection(s.id)}>
+              {busy ? "FORMATTING…" : "SUBMIT"} <Arrow />
+            </button>
+          </div>
         </div>
         <div className={`${styles.card} ${styles.manualRight} ${styles.previewCard}`} data-editing={editingPreview ? "" : undefined}>
           <div className={styles.previewHead}>
@@ -811,12 +872,19 @@ export default function BusinessPage() {
                   <Cell key={`b${i}`} label={`What ${r.a || `row ${i + 1}`} does`} placeholder="One line" value={r.b} onChange={(v) => setRow(i, { b: v })} />,
                 ])}
               </div>
-              <button type="button" className={styles.dashedBtn} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }] }))}>+ ADD ROW</button>
+              {s.rows.length < MAX_ROWS && <button type="button" className={styles.dashedBtn} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }].slice(0, MAX_ROWS) }))}>+ ADD ROW</button>}
             </div>
           ) : (
-            <Clamp className={styles.fill} title={`AI preview · ${s.label}`} full={<SectionFull section={s} />}>
+            <Clamp scroll className={styles.fill} title={`AI preview · ${s.label}`} full={<SectionFull section={s} />}>
               <KioskPreview flat section={{ ...s, label: `${String(screen.index + 1).padStart(2, "0")} · ${s.label}` }} />
             </Clamp>
+          )}
+          {busy && (
+            <div className={styles.previewBusy} role="status">
+              <span className={styles.spinner} />
+              <b>Formatting {file ?? "your notes"}…</b>
+              <span>The AI is writing a headline and up to {MAX_ROWS} rows for {s.label}.</span>
+            </div>
           )}
         </div>
         <Foot
