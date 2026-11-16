@@ -86,14 +86,17 @@ export const TOPICS: Topic[] = [
     id: "specs", n: "05", label: "SPECS", short: "Specs",
     title: "Specs & compatibility.", explode: 0.4, highlight: ["battery"],
     rows: [
-      { a: "Battery", b: "[X] h · [X] h with case" },
-      { a: "Bluetooth", b: "[5.x] · multipoint" },
-      { a: "Water resistance", b: "[IPXX]" },
-      { a: "Works with", b: "iOS · Android · Windows [confirm]" },
-      { a: "Weight", b: "[X] g per bud" },
+      { a: "Battery", b: "[X] h · [X] h with case", part: "battery" },
+      { a: "Bluetooth", b: "[5.x] · multipoint", part: "board" },
+      { a: "Water resistance", b: "[IPXX]", part: "shell" },
+      { a: "Works with", b: "iOS · Android · Windows [confirm]", part: "board" },
+      { a: "Weight", b: "[X] g per bud", part: "shell" },
     ],
   },
 ];
+
+/** Topics whose rows are interactive: hover a row, or swipe up / down through them, to light up that part. */
+export const PART_TOPICS = new Set(["how", "specs"]);
 
 // Staff shown when a visitor asks for a team member (placeholders for the exhibitor to fill in).
 export const STAFF = [

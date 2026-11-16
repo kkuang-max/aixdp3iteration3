@@ -10,13 +10,14 @@ export default function Model3D<Id extends string>(props: {
   accent: string;
   explode: number;
   highlight: readonly Id[];
+  interactive?: boolean; // parts can be pointed at (Kiosk reads data-model-part)
 }) {
   const { geo, accent, explode, highlight } = props;
   const slices = useMemo(() => buildModel({ geo, w: 460, accent, explode, highlight }), [geo, accent, explode, highlight]);
   return (
     <>
       <div className={styles.modelShadow} />
-      <div className={styles.modelWrap}>
+      <div className={styles.modelWrap} data-interactive={props.interactive ? "" : undefined}>
         <div className={styles.model}>
           {slices.map((sl, i) => (
             <svg
@@ -31,6 +32,7 @@ export default function Model3D<Id extends string>(props: {
               {sl.paths.map((p) => (
                 <path
                   key={p.key}
+                  data-model-part={p.part}
                   d={p.d}
                   transform={p.tf}
                   fill={p.fill}
