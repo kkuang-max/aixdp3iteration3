@@ -601,12 +601,18 @@ video.camVideo {
   min-height: 56px;
   padding: 0 18px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.4); /* at least 3:1 against the panel (WCAG 1.4.11) */
   background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
   font: inherit;
   font-size: 17px;
   user-select: text;
+}
+
+/* Placeholders such as you@company.com: white 60%, at least 4.5:1 on the form panel (WCAG 1.4.3). */
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+  opacity: 1;
 }
 
 .input[aria-invalid] {
@@ -615,7 +621,7 @@ video.camVideo {
 
 .inputSmall {
   min-height: 48px;
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.04);
   font-size: 16px;
 }
@@ -905,6 +911,12 @@ video.camVideo {
   color: #c9cedd;
 }
 
+.confirmNote {
+  margin-top: 30px;
+  font-size: 16px;
+  color: #c9cedd;
+}
+
 .countdown {
   position: relative;
   width: 124px;
@@ -1105,3 +1117,69 @@ video.camVideo {
 .modelPicture:has([data-live-model][data-ready]) {
   pointer-events: auto;
 }
+
+/* ---- "Try it" preview from the portal: only what is filled in ---- */
+.previewTag {
+  position: absolute;
+  z-index: 30;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid rgba(242, 194, 122, 0.55);
+  border-radius: 999px;
+  background: rgba(242, 194, 122, 0.14);
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  gap: 10px;
+  padding-right: 4px;
+  color: #f2c27a;
+}
+
+.previewClose {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(242, 194, 122, 0.18);
+  color: #f2c27a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.previewClose:hover,
+.previewClose:focus-visible {
+  background: #f2c27a;
+  color: #1b2036;
+  outline: none;
+}
+
+.panelTitle[data-empty] {
+  color: #9aa0b3;
+  font-weight: 400;
+}
+
+.noModel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.noModel span {
+  padding: 14px 22px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  font-size: 15px;
+  color: #9aa0b3;
+}
+

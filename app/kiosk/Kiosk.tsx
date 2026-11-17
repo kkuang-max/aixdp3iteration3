@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PART_TOPICS, TOPICS } from "@/lib/product";
 import { newSession, saveLead, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
@@ -9,7 +9,10 @@ import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
 import { Brochure, Contact, DemoContext, Hub, ModelFileContext, Team } from "./Screens";
 import { livePickers } from "./LiveModel";
-import { loadPublishedDemo, loadPublishedModelFile, type PublishedDemo } from "@/lib/published";
+import { loadPreviewDemo, loadPublishedDemo, loadPublishedModelFile, watchPreview, type PublishedDemo } from "@/lib/published";
+
+/** A preview whose draft hasn't loaded yet: shows nothing rather than the built-in sample. */
+const EMPTY_PREVIEW: PublishedDemo = { version: 1, preview: true, publishedAt: "", productName: "", sections: [], mappings: [] };
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
@@ -71,12 +74,32 @@ export default function Kiosk() {
   const [modelFile, setModelFile] = useState<{ key: string; name: string; data: ArrayBuffer } | null>(null);
 
   // Show what the business portal published; check for a newer version every minute.
+  // With ?preview=1 ("Try it" in the portal) show the portal's current draft instead, and reload it whenever the
+  // portal saves a new one.
+  const [preview, setPreview] = useState(false);
+  // The preview tab was opened by the portal's Try it: close it and go back there. If the browser won't let this tab
+  // close (it was opened some other way), go to the portal instead.
+  const exitPreview = () => {
+    window.close();
+    setTimeout(() => { if (!window.closed) window.location.href = "/business"; }, 150);
+  };
+  // Before the first paint, so a preview never flashes the built-in sample content.
+  useLayoutEffect(() => {
+    if (new URLSearchParams(window.location.search).has("preview")) setPreview(true);
+  }, []);
   useEffect(() => {
     let cancelled = false;
-    const load = () => loadPublishedDemo().then((d) => {
+    const isPreview = new URLSearchParams(window.location.search).has("preview");
+    const load = () => (isPreview ? loadPreviewDemo() : loadPublishedDemo()).then((d) => {
       if (!cancelled) setDemo((prev) => (d && prev?.publishedAt === d.publishedAt ? prev : d));
     });
     load();
+    if (isPreview) {
+      const stop = watchPreview(load);
+      const onShow = () => { if (document.visibilityState === "visible") load(); };
+      document.addEventListener("visibilitychange", onShow);
+      return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onShow); };
+    }
     const id = setInterval(load, 60000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
@@ -207,7 +230,7 @@ export default function Kiosk() {
       const s = ix.current;
       const tp = TOPICS[s.topic];
       if (s.screen !== "hub" || !PART_TOPICS.has(tp.id) || (dir !== "up" && dir !== "down")) return;
-      const rows = demoRef.current?.sections.find((x) => x.id === tp.id)?.rows.length ?? tp.rows.length;
+      const rows = demoRef.current ? (demoRef.current.sections.find((x) => x.id === tp.id)?.rows.length ?? 0) : tp.rows.length;
       const next = dir === "down" ? (s.activeRow === null ? 0 : s.activeRow + 1) : s.activeRow === null ? rows - 1 : s.activeRow - 1;
       const row = Math.min(Math.max(next, 0), rows - 1);
       s.activeRow = row;
@@ -536,11 +559,19 @@ export default function Kiosk() {
 
   const s = view;
   return (
-    <DemoContext.Provider value={demo}>
+    <DemoContext.Provider value={demo ?? (preview ? EMPTY_PREVIEW : null)}>
     <ModelFileContext.Provider value={liveFile}>
     <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
+        {preview && (
+          <div className={styles.previewTag}>
+            PREVIEW · NOT PUBLISHED
+            <button type="button" className={styles.previewClose} aria-label="Exit the preview" title="Exit the preview" onClick={exitPreview}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+        )}
 
         {screen === "hub" && (
           <Hub
