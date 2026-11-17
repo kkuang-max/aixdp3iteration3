@@ -1,15 +1,24 @@
-# Playform — touch-free booth kiosk (Prototype v2)
+# Playform, touch-free booth kiosk. P3.4: Prototype v2 & Ethical Audit
 
 Playform is a booth kiosk prototype that supports the people staffing an expo booth. It works like a digital
 pamphlet: it answers the general questions about a product so salespeople can spend their time on the in-depth ones,
 lets visitors ask for a team member, and collects leads. It has two sides:
 
-- **Customer side (the kiosk):** what expo visitors use, with a hand in front of the camera, touch or a mouse.
-- **Business side (the portal):** where the exhibitor sets up the demo the kiosk shows, from their own product doc and
-  3D model, then publishes it to the kiosk.
+- **Business side (the portal):** the exhibiting business inputs their own PRD (or writes / pastes each section) and
+  their own 3D model. AI turns the PRD into the kiosk's sections, the model is split into its own parts, the business
+  maps gestures to those parts, and then publishes the demo to the kiosk.
+- **Customer side (the kiosk):** what expo visitors use, with a hand in front of the camera, touch or a mouse. It shows
+  exactly what the business published.
 
-The demo product is **Orbit Earbuds**. Anything the exhibitor hasn't filled in yet is a bracketed placeholder, e.g.
-`[BRAND]`, `[X] h`, `[Staff name]`.
+Before anything has been published, the kiosk shows our built-in example, **Orbit Earbuds**. Details we don't have,
+like the brand, booth number and staff names, are bracketed placeholders, e.g. `[BRAND]`, `[X] h`, `[Staff name]`.
+
+Prototype v2 builds on Prototype v1 (iteration 3), which started from iteration 2
+([kkuang-max/p3iteration2](https://github.com/kkuang-max/p3iteration2)), with its full history, and was redesigned
+after user testing (R2 designs). v2 adds the changes from our team-to-team critique and ethical audit (see the change
+log). A webcam tracks the visitor's hand with
+[Google MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker); touch and a
+mouse work too.
 
 ## Open the prototype
 
@@ -64,74 +73,82 @@ The demo product is **Orbit Earbuds**. Anything the exhibitor hasn't filled in y
 
 ## Change log: v1 → v2
 
-v1 was our first iteration 3 build: the R2 kiosk screens and a first business portal (it started from iteration 2,
-[kkuang-max/p3iteration2](https://github.com/kkuang-max/p3iteration2)). v2 is shaped by our class team-to-team critique,
-our ethical audit (P3.4) and a WCAG 2.2 AA check.
+Everything below changed after November 11 (v1), in the code and in the ASK Figma file.
 
-**From the team-to-team critique.** The comments we got pointed at four things: the flow of the business side, not
-being able to tell which sections were done, long text getting cut off in the input boxes, and how the "talk to
-someone" intake asks for information. Each one became a change:
+**What we found in the class team-to-team critique, and how it shaped v2.** The comments we got pointed at four
+things: the flow of the business side, not being able to tell which sections were done, long text getting cut off in
+the input boxes, and how the "talk to someone" intake asks for information. Each one became a change (marked
+*from the critique* below).
 
-- **Changed the flow of the business side.** Auto setup now goes straight from Build my demo to reviewing and editing
-  one section at a time (the separate grid of section cards is gone), and Save section moves on to the next one.
-- **Added statuses to the editing screens.** Each section shows **Good**, **Needs attention** or **Insufficient**, both
-  on the section and in the section list, so the exhibitor can see what's left to do.
-- **Input boxes expand** when you type in or read them: a cell shows one line ending in "…", and opens over its
-  neighbours, tall enough for the whole text, like a spreadsheet cell.
-- **Edited the talk to someone intake** (see the ethical fixes below).
-- **Wording for ticketing and queue time:** "Your spot is saved. Feel free to keep looking around. You have been
-  emailed a ticket number and wait time to return."
+**Business side**
 
-**Business side, UI/UX:**
+- **Changed the flow of the business side** *(from the critique)*. Auto setup now goes from Build my demo straight to
+  reviewing and editing one section at a time (the grid of section cards and its "… More" pop-up are gone). Save
+  section moves on to the next section, and Check gestures is right next to it.
+- **Added statuses to the editing screens** *(from the critique)*. Each section shows **Good**, **Needs attention** or
+  **Insufficient**, on the section itself and in the section list, so the business can see what's left to do. ("Needs a
+  look" became "Needs attention" everywhere.)
+- **Gave the input boxes the ability to expand** when typing in or reading them *(from the critique)*. A box shows one
+  line ending in "…" with an expand icon, and opens over the boxes around it, tall enough for the whole text, like a
+  spreadsheet cell. Enter or clicking away keeps it, Escape undoes it, Tab moves to the next one.
+- **Edited the visual balance of the input/upload box vs the AI preview** in manual input. One "Type, paste, or upload
+  here" box (with the attached file shown as a tag, and Attach PDF) sits next to a wider AI preview, instead of a
+  separate upload strip, an "OR" and a paste box. The uploaded-file list is gone and the progress bar spans the
+  preview.
+- **Manual input uses AI too.** A **Submit** button sends what was typed, pasted or attached to the AI, which formats
+  it into that section's preview, as an alternative to auto mode where only a PRD is uploaded. Regenerate asks the AI
+  again (from the PRD in auto, from the notes in manual). Attached files stay after a refresh.
+- **Cleaned up the business UI.** The AI preview scrolls when there's too much to show, "Show all" opens the full text
+  (without repeating the PRD quote), highlighted rows on Interactions are no longer cut off, and every section is a
+  headline plus at most 5 rows.
+- **Empty states.** Nothing is filled in until the business uploads, types or asks the AI: no sample content to
+  mistake for theirs.
+  - In the auto and manual edits, empty boxes say what goes in them ("Write a headline", "No rows yet. Add up to 5.",
+    "Nothing to preview yet…"), and the parts views say "No model yet" until a 3D model is uploaded.
+  - **Preview mode (Try it)** opens the kiosk on the draft, marked "Preview · not published", showing only what's
+    filled in: "Not filled in yet" for a section without content and "No 3D model uploaded yet" without a model. An ×
+    closes it and goes back to the portal.
+- **Error states.** Build my demo stays off until there's a PRD; wrong file types, files over 4 MB and AI failures
+  each say what to do next; Publish says which sections still need filling in, or that an interaction is needed.
+- **Updated the design system to better match the needs of the UX/UI** (ASK Figma, DESIGN SYSTEM section): colour,
+  spacing and radius variables, Playform text styles, and business components (Button, with a new Submit style,
+  Badge, Step, Mode switch, Text field, Select, Chip, Nav item, Status, Status icon, the input card and the AI preview
+  card), used across every Business View frame. The Business View also shows the new empty, AI-at-work, editing and
+  Try it states.
 
-- **Cleaned up the business UI** to match the updated design system: one layout for every manual section, a wider
-  progress bar, and "Show all" on boxes whose text runs long.
-- **Edited the visual balance of the input/upload box vs the AI preview** in manual setup: one "Type, paste, or upload
-  here" box (with an attached-file tag and Attach PDF) next to a larger AI preview, instead of a separate upload strip
-  and paste box. A **Submit** button sends what was typed or attached to the AI, which formats it into the preview.
-  The preview scrolls when there's too much to show.
-- **Empty states:** nothing is filled in until the exhibitor uploads, types or asks the AI, so there is no sample
-  content to mistake for theirs. Empty boxes say what goes there ("Write a headline", "No rows yet. Add up to 5."),
-  the parts views stay empty until a model is uploaded, and **Try it** shows the kiosk exactly as filled in so far:
-  "Not filled in yet" for an empty section and "No 3D model uploaded yet".
-- **Error states:** Build my demo stays off until there's a product doc; wrong file types, files over 4 MB and AI
-  failures each say what to do next; publishing says which sections still need filling in; the kiosk form asks the
-  visitor to check an email or phone number that doesn't look right.
-- Every section is a headline plus at most 5 rows.
+**Customer side**
 
-**Updated the design system** to better match the needs of the UX/UI (ASK Figma, DESIGN SYSTEM section): colour,
-spacing and radius variables, Playform text styles, and business components (Button with a new Submit style, Badge,
-Step, Mode switch, Text field, Select, Chip, Nav item, Status, Status icon, the input card and the AI preview card),
-used across every Business View frame. The Business View in Figma also shows the new empty, AI-at-work, editing and
-Try it states.
-
-**Ethical audit fixes (customer side).**
-
-- **Changed the contact information to fix a dysaffordance.**
+- **Changed the contact information to comply with the ethical audit (dysaffordance).**
   *What changed:* the separate email field became one "Mode of contact" field that takes an email or a phone number,
   the corporate "you@company.com" placeholders were replaced with neutral ones ("first name, last name",
   "name@example.com or (XXX-XXX-XXXX)"), Company is optional, badge scanning is its own button, and the heading changed
   from "Let us contact you" to "Connect with our team".
-  *How it fixes it:* the old screen assumed every visitor was a corporate attendee with a badge and a work email, so
-  anyone without one had to give a fake or unwanted one to continue. Now people outside that norm can take part
+  *How it fixed it:* the original screen assumed every visitor was a corporate attendee with a badge and a work email,
+  so anyone without one had to give a fake or unwanted one to continue. Now people outside that norm can take part
   without misrepresenting themselves.
-- **Added a confirmation screen that says how contact data is used and kept (data, consent and surveillance).**
+- **Added a confirmation screen with information on data use, collection and retention (ethical audit: data, consent
+  and surveillance).**
   *What changed:* after submitting, visitors see who their details were sent to ("Your details have been sent to the
   Orbit Earbuds team. They'll be in touch about your inquiry.") and when they're deleted ("Your contact information
-  will be deleted after [X days]."), then the kiosk clears the form for the next person.
-  *How it fixes it:* visitors now know who receives their information, how it's used and how long it's kept, without
-  slowing down the kiosk.
-- **Changed the wording on the side navigation bar** of the customer side.
-- **Accessibility (WCAG 2.2 AA).**
-  *What changed:* field and control outlines are brighter (at least 3:1 against cards), section statuses use icons
-  with their own shapes (✓, !, empty ring) instead of coloured dots alone, the current progress step is a ring with a
-  centre dot instead of a lighter dot, and kiosk placeholder text and input outlines have more contrast.
-  *How it fixes it:* the interface is easier to read for people with low vision or colour vision deficiencies, and
-  nothing relies on colour alone.
+  will be deleted after [X days]."). The screen stays simple so it doesn't slow the kiosk down.
+  *How it fixed it:* visitors now know who receives their information, how it will be used and how long it's kept.
+- **Edited the talk to someone information intake** *(from the critique)*: the same neutral contact fields and badge
+  scan as above.
+- **Wording for ticketing and queue time:** "Your spot is saved. Feel free to keep looking around. You have been
+  emailed a ticket number and wait time to return."
+- **Wording change on the side view navigation bar.**
 
-Still open from the audit (planned before final): a disclosure before the exhibitor uploads files (what we collect,
-who sees it, how long we keep it), other ways in for exhibitors without a PRD or 3D model, and a short web address under
-the brochure QR code.
+**Both sides: accessibility (ethical audit, WCAG 2.2 AA)**
+
+*What changed:* field and control outlines are brighter (at least 3:1 against the cards), section statuses use icons
+with their own shapes (✓ Good, ! Needs attention, empty ring Insufficient) instead of coloured dots alone, the current
+progress step is a ring with a centre dot instead of a lighter dot, and kiosk placeholder text and input outlines have
+more contrast. *How it fixed it:* it's easier to read and navigate for people with low vision or colour vision
+deficiencies, and nothing relies on colour alone.
+
+**Still open from the ethical audit (planned before final):** a disclosure before the business uploads files (what we
+collect, why, who sees it, how long we keep it), other ways in for businesses without a PRD or 3D model, and a short web
+address under the brochure QR code.
 
 ## Screens
 
