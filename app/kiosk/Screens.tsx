@@ -63,6 +63,8 @@ const useProductName = () => {
   const demo = useContext(DemoContext);
   return demo ? demo.productName.toUpperCase() : PRODUCT.name;
 };
+/** "ORBIT EARBUDS" → "Orbit Earbuds", for names inside a sentence. */
+const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 /** "NAME / REST", or just "REST" while the product has no name. */
 const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
@@ -253,6 +255,9 @@ export function Hub(props: {
 const BADGE_SCAN_MS = 2500; // prototype: the badge "scan" is simulated
 const CONFIRM_S = 10; // confirmation screens go back to the topics after this long
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** A phone number: at least 7 digits, with the usual spaces, dashes, dots, brackets or a leading +. */
+const PHONE_RE = /^\+?[\d\s().-]{7,}$/;
+const isPhone = (v: string) => PHONE_RE.test(v) && v.replace(/\D/g, "").length >= 7;
 
 type SendProps = {
   session: Session;
@@ -324,12 +329,15 @@ function DetailsForm(props: {
   heading?: string;
   questions?: boolean;
   className?: string;
+  /** Leave contact info: one "mode of contact" field that takes an email address or a phone number. */
+  anyContact?: boolean;
 }) {
   const s = props.session;
   const [emailError, setEmailError] = useState(false);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!EMAIL_RE.test(s.email.trim())) {
+    const v = s.email.trim();
+    if (!(EMAIL_RE.test(v) || (props.anyContact && isPhone(v)))) {
       setEmailError(true);
       return;
     }
@@ -339,12 +347,13 @@ function DetailsForm(props: {
     <form className={`${styles.formCard} ${props.className ?? ""}`} onSubmit={submit} noValidate>
       {props.heading && <span className={styles.formHeading}>{props.heading}</span>}
       <label htmlFor="lead-name" className={styles.leadCardTitle}>TYPE YOUR NAME</label>
-      <input id="lead-name" type="text" placeholder="[Your name]" autoComplete="off" className={styles.input} value={s.name} onChange={(e) => props.onChange({ name: e.target.value })} />
-      <label htmlFor="lead-email" className={styles.leadCardTitle}>TYPE YOUR EMAIL</label>
+      <input id="lead-name" type="text" placeholder={props.anyContact ? "first name, last name" : "[Your name]"} autoComplete="off" className={styles.input} value={s.name} onChange={(e) => props.onChange({ name: e.target.value })} />
+      <label htmlFor="lead-email" className={styles.leadCardTitle}>{props.anyContact ? "MODE OF CONTACT" : "TYPE YOUR EMAIL"}</label>
       <input
         id="lead-email"
-        type="email"
-        placeholder="you@company.com"
+        type={props.anyContact ? "text" : "email"}
+        inputMode={props.anyContact ? "email" : undefined}
+        placeholder={props.anyContact ? "name@example.com or (XXX-XXX-XXXX)" : "you@company.com"}
         autoComplete="off"
         className={styles.input}
         aria-invalid={emailError || undefined}
@@ -355,7 +364,7 @@ function DetailsForm(props: {
         }}
       />
       <label htmlFor="lead-company" className={styles.inputLabel}>COMPANY (OPTIONAL)</label>
-      <input id="lead-company" type="text" placeholder="[Company]" autoComplete="off" className={`${styles.input} ${styles.inputSmall}`} value={s.company} onChange={(e) => props.onChange({ company: e.target.value })} />
+      <input id="lead-company" type="text" placeholder={props.anyContact ? "[company]" : "[Company]"} autoComplete="off" className={`${styles.input} ${styles.inputSmall}`} value={s.company} onChange={(e) => props.onChange({ company: e.target.value })} />
       {props.questions && (
         <>
           <label htmlFor="lead-questions" className={styles.inputLabel}>LET US KNOW IF YOU HAVE ANY SPECIFIC QUESTIONS</label>
@@ -363,14 +372,14 @@ function DetailsForm(props: {
         </>
       )}
       <button type="submit" className={styles.submitBtn}>
-        {emailError ? "CHECK THE EMAIL ADDRESS" : <><SendIcon /> SUBMIT</>}
+        {emailError ? (props.anyContact ? "CHECK THE EMAIL OR PHONE NUMBER" : "CHECK THE EMAIL ADDRESS") : <><SendIcon /> SUBMIT</>}
       </button>
     </form>
   );
 }
 
 /** Confirmation with a ring that counts down, then goes back to the topics. */
-function Confirmation(props: { title: string; body: string; onDone: () => void; accent: string; eyebrow: string }) {
+function Confirmation(props: { title: string; body: string; onDone: () => void; accent: string; eyebrow: string; note?: string }) {
   const [left, setLeft] = useState(CONFIRM_S);
   const done = useRef(props.onDone);
   useEffect(() => {
@@ -404,6 +413,7 @@ function Confirmation(props: { title: string; body: string; onDone: () => void; 
           </svg>
           <span className={styles.countdownText}>Back to Home<br />{left} sec</span>
         </button>
+        {props.note && <span className={styles.confirmNote}>{props.note}</span>}
       </div>
     </>
   );
@@ -496,7 +506,8 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
       <Confirmation
         eyebrow={named(productName, "LEAVE CONTACT INFO")}
         title="THANKS, WE’LL BE IN TOUCH"
-        body="Someone from our team will reach out to you soon."
+        body={`Your details have been sent to the ${productName ? `${titleCase(productName)} team` : "team"}. They’ll be in touch about your inquiry.`}
+        note="Your contact information will be deleted after [X days]."
         onDone={props.onBack}
         accent={props.accent}
       />
@@ -516,9 +527,9 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
       <div className={styles.eyebrow}>{named(productName, "LEAVE CONTACT INFO")}</div>
       <BackLink onBack={props.onBack} />
       <div className={styles.contactIntro}>
-        <span className={styles.contactTitle}>LET US CONTACT YOU</span>
+        <span className={styles.contactTitle}>CONNECT WITH OUR TEAM</span>
         <span className={styles.contactBody}>
-          {scanning ? "Looking for your badge… hold it still in front of the camera." : "Scan your badge or enter your contact info so we can reach out to you."}
+          {scanning ? "Looking for your badge… hold it still in front of the camera." : "Share your contact information, and a team member will follow up with you. Simply scan your badge or enter your information."}
         </span>
         <div className={styles.contactButtons}>
           <HandButton className={styles.pillBtn} onClick={scan}>
@@ -536,6 +547,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
         onChange={props.onChange}
         onSubmit={() => sent("email")}
         heading="NO BADGE? TYPE IT IN"
+        anyContact
         questions
         className={styles.contactForm}
       />

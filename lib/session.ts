@@ -72,7 +72,9 @@ export function saveLead(s: Session, method: LeadMethod, kind: LeadKind = "broch
       kind,
       method,
       name: method === "email" ? s.name || null : null,
-      email: method === "email" ? s.email : null,
+      // The contact field takes an email address or (on "Leave contact info") a phone number.
+      email: method === "email" && s.email.includes("@") ? s.email.trim() : null,
+      phone: method === "email" && !s.email.includes("@") ? s.email.trim() : null,
       questions: s.questions || null,
       company: s.company || null,
       pricing: s.pricing,
