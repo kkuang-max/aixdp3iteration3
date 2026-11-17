@@ -53,7 +53,7 @@ mouse work too.
 - Hand tracking from the webcam, pointing and hold-to-press, and swipes (How it works and Specs).
 - Reading the uploaded 3D model in the browser and splitting it into its own parts.
 - The AI: Claude reads the product doc (auto) or the exhibitor's notes / file (manual) and writes the sections, with
-  the passage it used and "Needs attention" wherever the doc is missing facts.
+  the passage it used and "Needs attention" wherever the doc is missing facts. The deployment has its API key set up.
 - Publishing: the kiosk shows exactly what was published. Nothing is filled in with sample content. Before anything
   has been published, the kiosk shows the built-in Orbit Earbuds demo.
 
@@ -68,8 +68,6 @@ mouse work too.
   placeholders.
 - **Publishing to other devices** needs a Vercel Blob store connected to the deployment. Without one, the kiosk only
   picks up a demo published from the same browser.
-- **The AI** needs an Anthropic API key on the deployment (`ANTHROPIC_API_KEY`). Without one, the portal says so and the
-  sections can still be written by hand.
 
 ## Change log: v1 → v2
 
