@@ -68,7 +68,7 @@
   z-index: 3;
   display: flex;
   padding: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 999px;
   background: rgba(12, 15, 28, 0.5);
 }
@@ -157,9 +157,14 @@
   justify-content: center;
 }
 
-.stepDot[data-state="done"],
-.stepDot[data-state="current"] {
+.stepDot[data-state="done"] {
   background: #c8d8ff;
+}
+
+/* Current step: a ring with a centre dot, so it differs from the steps to come by shape, not only colour (WCAG 1.4.1). */
+.stepDot[data-state="current"] {
+  background: radial-gradient(circle, #c8d8ff 0 6px, transparent 6.5px);
+  box-shadow: inset 0 0 0 2.5px #c8d8ff;
 }
 
 /* ---- Shared pieces ---- */
@@ -234,7 +239,7 @@
   min-width: 0;
   height: 42px;
   padding: 0 13px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
   font-size: 15px;
@@ -269,7 +274,7 @@
   width: 100%;
   height: 42px;
   padding: 0 34px 0 13px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
   font-size: 15px;
@@ -478,7 +483,7 @@
 }
 
 .drop {
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
   color: #b5bacb;
@@ -619,7 +624,7 @@
   color: #b9c0d3;
 }
 
-/* Section status (Figma component "Status"): Good, Needs Attention, Insufficient. */
+/* Section status (Figma component "Status"): Good, Needs attention, Insufficient. Each has its own icon shape (✓ / ! / empty ring), not colour alone. */
 .status {
   display: inline-flex;
   align-items: center;
@@ -629,26 +634,24 @@
   white-space: nowrap;
 }
 
-.statusDot {
+.statusIcon {
   flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
+  width: 12px;
+  height: 12px;
 }
 
 .status[data-status="good"],
-.statusDot[data-status="good"] {
+.statusIcon[data-status="good"] {
   color: #5ac064;
 }
 
 .status[data-status="attention"],
-.statusDot[data-status="attention"] {
+.statusIcon[data-status="attention"] {
   color: #f2c27a;
 }
 
 .status[data-status="insufficient"],
-.statusDot[data-status="insufficient"] {
+.statusIcon[data-status="insufficient"] {
   color: #f0a3a3;
 }
 
@@ -833,7 +836,7 @@
   box-sizing: border-box;
   resize: none;
   padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   font-size: 16px !important;
@@ -865,7 +868,7 @@
 .partsPreview {
   flex: 1;
   min-height: 0;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border: 1px dashed rgba(255, 255, 255, 0.4);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
   display: flex;
@@ -889,7 +892,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
@@ -1106,7 +1109,7 @@
 
 .gestureSelect select:hover,
 .gestureSelect select:focus {
-  border-color: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.4);
   padding-left: 8px;
 }
 
@@ -1594,7 +1597,7 @@
 .modalClose {
   width: 32px;
   height: 32px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 50%;
   background: transparent;
   font-size: 20px;
@@ -1669,7 +1672,7 @@
   z-index: 3;
   height: 30px;
   padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 999px;
   background: rgba(12, 15, 28, 0.5);
   display: flex;
@@ -1719,7 +1722,7 @@
   height: 42px;
   display: flex;
   align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
 }
@@ -1909,7 +1912,7 @@
   flex: 1;
   margin: 0;
   padding: 0 40px;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border: 1px dashed rgba(255, 255, 255, 0.4);
   border-radius: 16px;
   display: flex;
   align-items: center;

@@ -272,7 +272,7 @@ function Cell({ value, onChange, label, placeholder, widen, bold, span }: {
 
 // ---- Section status: shown as a coloured dot in the section list and a label on the section -----------
 type Status = "good" | "attention" | "insufficient";
-const STATUS_TEXT: Record<Status, string> = { good: "Good", attention: "Needs Attention", insufficient: "Insufficient" };
+const STATUS_TEXT: Record<Status, string> = { good: "Good", attention: "Needs attention", insufficient: "Insufficient" };
 const PLACEHOLDER = /\[[^\]]*\]/; // "[X] h", "[competitor]": left for the exhibitor to fill in
 
 function sectionStatus(s: Section): Status {
@@ -282,8 +282,16 @@ function sectionStatus(s: Section): Status {
   return "good";
 }
 
+/** Each status has its own shape as well as its colour (✓ / ! / empty ring), so it never relies on colour alone. */
+function StatusIcon({ status, label }: { status: Status; label?: string }) {
+  const common = { className: styles.statusIcon, "data-status": status, width: 12, height: 12, viewBox: "0 0 12 12", role: label ? "img" : undefined, "aria-label": label, "aria-hidden": label ? undefined : true } as const;
+  if (status === "good") return <svg {...common}><circle cx="6" cy="6" r="6" fill="currentColor" /><path d="M3.3 6.2l1.8 1.8 3.6-3.8" fill="none" stroke="#1b2036" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  if (status === "attention") return <svg {...common}><circle cx="6" cy="6" r="6" fill="currentColor" /><path d="M6 3v3.6" stroke="#1b2036" strokeWidth="1.6" strokeLinecap="round" /><circle cx="6" cy="8.8" r="0.95" fill="#1b2036" /></svg>;
+  return <svg {...common}><circle cx="6" cy="6" r="5.1" fill="none" stroke="currentColor" strokeWidth="1.8" /></svg>;
+}
+
 function StatusLabel({ status }: { status: Status }) {
-  return <span className={styles.status} data-status={status}><span className={styles.statusDot} />{STATUS_TEXT[status]}</span>;
+  return <span className={styles.status} data-status={status}><StatusIcon status={status} />{STATUS_TEXT[status]}</span>;
 }
 
 // ---- Overflow: "Show all" opens the full text in a modal ------------------------------------
@@ -738,19 +746,19 @@ export default function BusinessPage() {
     const next = config.sections[at + 1];
     body = (
       <>
-        <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}. Open any section to edit it.` : "Nothing is filled in yet. Write each section, or build them from a product doc."}</p></div>
+        <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}. Open any section to edit it.` : config.sections.some((x) => x.title.trim() || x.rows.length) ? "Write each section, or build them from a product doc." : "Nothing is filled in yet. Write each section, or build them from a product doc."}</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
         <nav className={styles.sideNav} aria-label="Sections">
           {config.sections.map((x) => {
             const st = sectionStatus(x);
             return (
               <button key={x.id} type="button" className={styles.sideItem} aria-current={x.id === s.id ? "page" : undefined} title={STATUS_TEXT[st]} onClick={() => go({ name: "a-edit", id: x.id })}>
-                {x.label}<span className={styles.statusDot} data-status={st} aria-label={STATUS_TEXT[st]} />
+                {x.label}<StatusIcon status={st} label={STATUS_TEXT[st]} />
               </button>
             );
           })}
           <button type="button" className={styles.sideItem} title={STATUS_TEXT[gestureStatus]} onClick={() => go({ name: "i-list" })}>
-            Interactions<span className={styles.statusDot} data-status={gestureStatus} aria-label={STATUS_TEXT[gestureStatus]} />
+            Interactions<StatusIcon status={gestureStatus} label={STATUS_TEXT[gestureStatus]} />
           </button>
         </nav>
         <div className={`${styles.card} ${styles.editCard}`}>

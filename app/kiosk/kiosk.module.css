@@ -601,12 +601,18 @@ video.camVideo {
   min-height: 56px;
   padding: 0 18px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.4); /* at least 3:1 against the panel (WCAG 1.4.11) */
   background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
   font: inherit;
   font-size: 17px;
   user-select: text;
+}
+
+/* Placeholders such as you@company.com: white 60%, at least 4.5:1 on the form panel (WCAG 1.4.3). */
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+  opacity: 1;
 }
 
 .input[aria-invalid] {
@@ -615,7 +621,7 @@ video.camVideo {
 
 .inputSmall {
   min-height: 48px;
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.04);
   font-size: 16px;
 }
