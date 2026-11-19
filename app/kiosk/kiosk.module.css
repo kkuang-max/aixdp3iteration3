@@ -1253,7 +1253,13 @@ video.camVideo {
 }
 
 .modelZoomClip:has(> .modelZoom[data-zoomed]) {
-  -webkit-mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
-  mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
+  /* Zoomed in: the model only shows between the topics and the text, fading out at the edges. The zoomed part itself
+     always fits inside (it's sized to 360×400 around 630,320). */
+  -webkit-mask-image: linear-gradient(to right, transparent 370px, #000 410px, #000 812px, transparent 842px),
+    linear-gradient(to bottom, transparent 70px, #000 105px, #000 560px, transparent 600px);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 370px, #000 410px, #000 812px, transparent 842px),
+    linear-gradient(to bottom, transparent 70px, #000 105px, #000 560px, transparent 600px);
+  mask-composite: intersect;
 }
 

@@ -68,16 +68,12 @@ export function buildModel<Id extends string>(o: {
       const tf = `translate(${(ox * e).toFixed(1)},${(oy * e).toFixed(1)}) translate(${p.o[0]},${p.o[1]}) scale(${s.toFixed(3)}) translate(${-p.o[0]},${-p.o[1]})`;
       const [light, dark] = TONES[p.tone ?? "pearl"];
       const shade = front ? light : mix(dark, light, 0.25 + 0.6 * ((z + zm) / (2 * zm)));
-      // A lit part takes on the accent colour through its whole depth and glows; when something is lit, the rest dims.
-      const c = on ? mix(shade, o.accent, front ? 0.45 : 0.6) : shade;
-      const op = !on && o.highlight.length ? 0.38 : 1;
+      // The selected part keeps its own colours; when something is selected, everything else goes see-through.
+      const c = shade;
+      const op = !on && o.highlight.length ? 0.16 : 1;
       let n = 0;
       const push = (x: Omit<ModelPath, "key" | "d" | "tf" | "part"> & { tf?: string }) => paths.push({ d: p.d, tf, ...x, part: p.id, key: `${p.id}-${n++}` });
-      if (on && front) {
-        push({ fill: "none", stroke: o.accent, sw: 26, op: 0.18 });
-        push({ fill: "none", stroke: o.accent, sw: 12, op: 0.5 });
-      }
-      push({ fill: c, stroke: front ? (on ? "#FFFFFF" : mix(light, dark, 0.35)) : c, sw: front ? (on ? 3 : 1.2) : 2.4, op });
+      push({ fill: c, stroke: front ? mix(light, dark, 0.35) : c, sw: front ? 1.2 : 2.4, op });
       if (front && p.tp != null) {
         const tp = p.tp;
         push({

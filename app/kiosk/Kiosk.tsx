@@ -8,7 +8,7 @@ import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
 import { Brochure, Contact, DemoContext, Hub, ModelFileContext, Team } from "./Screens";
-import { liveNearest, livePickers } from "./LiveModel";
+import { liveBox, liveNearest, livePickers } from "./LiveModel";
 import { kioskBooth, loadPreviewDemo, loadPublishedDemo, loadPublishedModelFile, watchPreview, type PublishedDemo } from "@/lib/published";
 
 /** A preview whose draft hasn't loaded yet: shows nothing rather than the built-in sample. */
@@ -43,6 +43,13 @@ const PINCH_OPEN = 0.45;
 const PINCH_CLOSE = 0.4;
 const PINCH_WINDOW_MS = 900;
 const PINCH_QUIET_MS = 700; // after a zoom in / out, ignore the hand settling
+// A pinch only counts from a hand that is held fairly still, in view and facing the camera. A hand being lowered or
+// taken away also brings the fingers together, so zooming out also needs the fingers to stay closed for a moment.
+const PINCH_MAX_SPEED = 0.8; // palm speed (camera frames per second) above which the hand is moving, not pinching
+const PINCH_MAX_TURN = 1.3; // hand size changing by more than this within the window: turning or moving away
+const PINCH_OPEN_AT = 0.75; // fingers clearly apart (in hand sizes) to count as spread
+const PINCH_SHUT_AT = 0.4; // fingers together (in hand sizes) to count as pinched in
+const PINCH_HOLD_MS = 350; // ...and kept together this long, with the hand still in view
 const WHEEL_STEP = 60; // accumulated wheel / trackpad-pinch delta for one zoom in / out
 const TOUCH_IN = 1.25; // two-finger distance ratio that zooms in on a touchscreen
 const TOUCH_OUT = 0.8;
@@ -62,6 +69,22 @@ export type HoldState = { holding: boolean; part: string | null; zoomed: boolean
 const NO_HOLD: HoldState = { holding: false, part: null, zoomed: false, zoomPart: null, origin: "50% 50%", shift: [0, 0], scale: 1.6 };
 /** Where the model sits on the 1280×720 stage (matches .modelZone). */
 const MODEL_AREA = { x: 400, y: 70, w: 460, h: 495 };
+/** A zoomed part is centred here and fits inside this box, between the topics and the text (stage px). */
+const ZOOM_CENTER = { x: 630, y: 320 };
+const ZOOM_FIT = { w: 360, h: 400 };
+
+/** A part's box on screen right now (sample earbud or uploaded model). */
+function partBox(part: string): { l: number; t: number; r: number; b: number } | null {
+  const canvas = document.querySelector("canvas[data-live-model][data-ready]");
+  if (canvas instanceof HTMLCanvasElement) return liveBox.get(canvas)?.(part) ?? null;
+  let box: { l: number; t: number; r: number; b: number } | null = null;
+  for (const el of document.querySelectorAll(`[data-model-part="${CSS.escape(part)}"]`)) {
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    box = box ? { l: Math.min(box.l, r.left), t: Math.min(box.t, r.top), r: Math.max(box.r, r.right), b: Math.max(box.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
+  }
+  return box;
+}
 
 /** The part of the model nearest a screen point: the sample earbud's drawn parts, or the uploaded model's 3D parts. */
 function nearestPart(x: number, y: number): { part: string; cx: number; cy: number; size: number } | null {
@@ -208,7 +231,9 @@ export default function Kiosk() {
     zoomShift: [0, 0] as [number, number],
     zoomScale: 1.6,
     spread: -1, // smoothed thumb–index spread, in hand sizes (-1 = not measured yet)
-    spreadHist: [] as [number, number][], // recent [time, spread], to spot an opening or closing pinch
+    spreadHist: [] as [number, number, number][], // recent [time, spread, hand size], to spot an opening or closing pinch
+    palm: null as [number, number, number] | null, // last [time, x, y] of the palm, for its speed
+    shutSince: 0, // when the fingers came together while zoomed in (0 = not pinched in)
     pinchQuiet: 0,
     wheelAcc: 0,
     wheelAt: 0,
@@ -330,27 +355,41 @@ export default function Kiosk() {
     const r = zone.getBoundingClientRect();
     return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
   };
+  /** Fit the zoomed part whole in the middle of the screen: scaled so it fills ZOOM_FIT, centred on ZOOM_CENTER. */
+  const aimZoom = useCallback(() => {
+    const s = ix.current;
+    const box = s.zoomPart ? partBox(s.zoomPart) : null;
+    const zone = document.querySelector("[data-model-zone]")?.getBoundingClientRect();
+    if (!box || !zone) return pushHold();
+    // Screen px → stage px, then undo the current zoom to get where the part sits unzoomed.
+    const k = zone.width / MODEL_AREA.w;
+    const toStage = (x: number, y: number) => [MODEL_AREA.x + (x - zone.left) / k, MODEL_AREA.y + (y - zone.top) / k];
+    const [l, t] = toStage(box.l, box.t);
+    const [r, b] = toStage(box.r, box.b);
+    const [tx, ty] = s.zoomShift, sc = s.zoomScale;
+    const L = (l - tx) / sc, T = (t - ty) / sc, R = (r - tx) / sc, B = (b - ty) / sc;
+    const scale = Math.min(Math.max(Math.min(ZOOM_FIT.w / Math.max(R - L, 1), ZOOM_FIT.h / Math.max(B - T, 1)), 1), 6);
+    s.zoomScale = scale;
+    s.zoomShift = [ZOOM_CENTER.x - scale * ((L + R) / 2), ZOOM_CENTER.y - scale * ((T + B) / 2)];
+    s.zoomOrigin = "0px 0px";
+    pushHold();
+  }, [pushHold]);
   /** Zoom in on the part nearest (x, y). Only on the topics whose parts come apart (How it works, Specs). */
   const zoomIn = useCallback((x: number, y: number) => {
     const s = ix.current;
     if (s.zoomed || s.screen !== "hub" || !PART_TOPICS.has(TOPICS[s.topic].id) || !overModel(x, y)) return false;
     const near = nearestPart(x, y);
     if (!near) return false;
-    // Zoom about the part and move it to the middle of the model area (stage px: the area is 400,70 · 460×495).
-    const zone = document.querySelector("[data-model-zone]")!.getBoundingClientRect();
-    const px = MODEL_AREA.x + ((near.cx - zone.left) / zone.width) * MODEL_AREA.w;
-    const py = MODEL_AREA.y + ((near.cy - zone.top) / zone.height) * MODEL_AREA.h;
-    s.zoomOrigin = `${px.toFixed(1)}px ${py.toFixed(1)}px`;
-    s.zoomShift = [MODEL_AREA.x + MODEL_AREA.w / 2 - px, MODEL_AREA.y + MODEL_AREA.h * 0.45 - py];
-    // Big enough that the part fills about 220 px of the area, between 1.5× and 3×.
-    const size = (near.size / zone.width) * MODEL_AREA.w;
-    s.zoomScale = Math.min(Math.max(220 / Math.max(size, 1), 1.5), 3);
     s.zoomed = true;
     s.zoomPart = near.part;
+    s.zoomShift = [0, 0];
+    s.zoomScale = 1;
+    aimZoom();
+    // The model stops turning and the part settles where it's pulled out: centre it again once it has.
+    for (const ms of [350, 800]) setTimeout(() => { if (ix.current.zoomPart === near.part) aimZoom(); }, ms);
     if (!session.current.zoomed.includes(near.part)) session.current.zoomed.push(near.part);
-    pushHold();
     return true;
-  }, [pushHold]);
+  }, [aimZoom]);
   const zoomOut = useCallback(() => {
     const s = ix.current;
     if (!s.zoomed) return false;
@@ -388,6 +427,8 @@ export default function Kiosk() {
     s.holding = false;
     s.spread = -1;
     s.spreadHist = [];
+    s.shutSince = 0;
+    s.palm = null;
     pushHold();
   }, [pushHold]);
   // A new topic or screen starts un-zoomed.
@@ -545,27 +586,47 @@ export default function Kiosk() {
       pointAt(s.x, s.y, "hand", now);
 
       // Pinch: spreading the thumb and index fingertips apart zooms in on the nearest part (as on a touchscreen) and it
-      // stays zoomed; bringing them back together zooms out. Measured in hand sizes so it works near and far from the
-      // camera, and judged over a short window so the hand's natural jitter never triggers it.
+      // stays zoomed; bringing them back together, and keeping them together for a moment, zooms out. Measured in hand
+      // sizes so it works near and far from the camera. A hand that's moving, turning, near the edge of the camera's
+      // view or leaving it never counts, so taking the hand away doesn't close the zoom.
       const lm = hand.landmarks;
+      const prevPalm = s.palm;
+      s.palm = [now, hand.palmX, hand.palmY];
+      const speed = prevPalm ? Math.hypot(hand.palmX - prevPalm[1], hand.palmY - prevPalm[2]) / Math.max((now - prevPalm[0]) / 1000, 1e-3) : 0;
+      const steady = speed < PINCH_MAX_SPEED && !edgeOf(hand.palmX, hand.palmY);
       if (lm?.length >= 10 && !swiping) {
         const d = (a: number, b: number) => Math.hypot((lm[a].x - lm[b].x) * hand.aspect, lm[a].y - lm[b].y);
         const size = d(0, 9);
-        if (size > 1e-3) {
+        if (size > 1e-3 && steady) {
           const raw = d(4, 8) / size;
           s.spread = s.spread < 0 ? raw : s.spread * 0.5 + raw * 0.5;
-          s.spreadHist.push([now, s.spread]);
+          s.spreadHist.push([now, s.spread, size]);
           while (s.spreadHist.length && now - s.spreadHist[0][0] > PINCH_WINDOW_MS) s.spreadHist.shift();
-          if (now >= s.pinchQuiet && s.spreadHist.length > 3) {
+          const sizes = s.spreadHist.map((h) => h[2]);
+          const turning = Math.max(...sizes) / Math.min(...sizes) > PINCH_MAX_TURN;
+          if (now >= s.pinchQuiet && s.spreadHist.length > 3 && !turning) {
             const vals = s.spreadHist.map((h) => h[1]);
             const opened = s.spread - Math.min(...vals);
             const closed = Math.max(...vals) - s.spread;
-            const fired = !s.zoomed && opened > PINCH_OPEN ? zoomIn(s.x, s.y) : s.zoomed && closed > PINCH_CLOSE ? zoomOut() : false;
+            let fired = false;
+            if (!s.zoomed && opened > PINCH_OPEN && s.spread > PINCH_OPEN_AT) fired = zoomIn(s.x, s.y);
+            else if (s.zoomed) {
+              // Pinched in: the fingers came together and stayed together, with the hand steady and in view.
+              if (s.spread < PINCH_SHUT_AT && (s.shutSince || closed > PINCH_CLOSE)) {
+                if (!s.shutSince) s.shutSince = now;
+                else if (now - s.shutSince >= PINCH_HOLD_MS) fired = zoomOut();
+              } else s.shutSince = 0;
+            }
             if (fired) {
               s.spreadHist = [];
+              s.shutSince = 0;
               s.pinchQuiet = now + PINCH_QUIET_MS;
             }
-          }
+          } else if (turning) s.shutSince = 0;
+        } else {
+          // Moving or near the edge: start over once the hand is still again.
+          s.spreadHist = [];
+          s.shutSince = 0;
         }
       }
     },

@@ -765,6 +765,21 @@ export default function BusinessPage() {
       setPublishing(false);
     }
   };
+  // Open kiosk: the published kiosk. Signed in, that's the account's first booth (its kiosk shows only this business's
+  // demo); with no booth yet, make one first. Without accounts, the open kiosk.
+  const openKiosk = async () => {
+    if (!userId) { window.open("/", "_blank", "noopener"); return; }
+    const tab = window.open("about:blank", "_blank"); // opened first so the browser doesn't block it
+    const { data } = await supabase().from("booths").select("id").order("created_at").limit(1);
+    const booth = data?.[0]?.id;
+    if (!booth) {
+      tab?.close();
+      setNotice("Make a booth first: each booth gets its own kiosk link.");
+      go({ name: "account" });
+      return;
+    }
+    if (tab) tab.location.href = `/?booth=${booth}`;
+  };
   // Try it: open the kiosk on this draft (not the published demo), showing only what is filled in so far.
   const tryIt = async () => {
     window.open("/?preview=1", "playform-preview"); // opened first so the browser doesn't block it; it reloads when the draft is saved
@@ -1141,6 +1156,12 @@ export default function BusinessPage() {
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
         <div className={styles.eyebrow}>{config.productName ? `${config.productName.toUpperCase()} / ` : ""}SET UP YOUR DEMO</div>
+        {!gate && (
+          <button type="button" className={styles.kioskBtn} data-signed-in={user ? "" : undefined} onClick={openKiosk} title={user ? "Open your booth's kiosk (shows what you published)" : "Open the kiosk (shows what you published)"}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+            OPEN KIOSK
+          </button>
+        )}
         {!gate && user && (
           <button type="button" className={styles.accountBtn} aria-current={screen.name === "account" ? "page" : undefined} onClick={() => go({ name: "account" })} title={user.email ?? undefined}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>

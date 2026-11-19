@@ -2227,3 +2227,31 @@
   color: #aeb4c6;
 }
 
+/* Open kiosk: left of Booths & leads when signed in, else left of Restart. */
+.kioskBtn {
+  position: absolute;
+  right: 377px;
+  top: 14px;
+  z-index: 3;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(12, 15, 28, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.kioskBtn[data-signed-in] {
+  right: 541px;
+}
+
+.kioskBtn:hover,
+.accountBtn:hover {
+  border-color: #eef1f8;
+}
+
