@@ -20,7 +20,7 @@ const STAGE_W = 1280;
 const STAGE_H = 720;
 
 type Screen = "hub" | "staff" | "brochure" | "contact";
-const DEFAULT_TOPIC = 1; // "How it works": the exploded earbud is the strongest first impression
+const DEFAULT_TOPIC = 0; // "What it is": every visitor starts here (and the kiosk goes back here when it starts over)
 
 // Timing.
 const PRESENT_MS = 8000; // no hand and no touch/mouse for this long → nobody is at the kiosk
