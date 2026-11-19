@@ -1059,7 +1059,7 @@
 .gestureHead,
 .gestureRow {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) 144px 144px 20px;
+  grid-template-columns: 24px 130px 160px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
 }
@@ -1954,3 +1954,69 @@
   align-items: center;
   cursor: pointer;
 }
+
+/* ---- Interactions: what each gesture shows, per part (Gesture → Does → What it says) ---- */
+.gestureRows {
+  gap: 12px;
+}
+
+.gestureRow {
+  cursor: default;
+}
+
+.gestureIcon {
+  display: flex;
+  justify-content: center;
+  color: #c9cfdd;
+}
+
+.gestureCell {
+  box-sizing: border-box;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gestureDoes {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #c9cfdd;
+}
+
+.gestureFixed {
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  color: #9aa0b3;
+}
+
+.gestureRow .cell {
+  border-color: rgba(200, 216, 255, 0.45);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gestureNote {
+  text-align: right;
+}
+
+.usedChipRemove {
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #c8d8ff !important;
+  font-size: 13px !important;
+  line-height: 1;
+}
+
+.usedChipRemove:hover {
+  background: rgba(200, 216, 255, 0.2);
+}
+

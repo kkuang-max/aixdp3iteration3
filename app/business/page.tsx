@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { TOPICS } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
+import { EMPTY_PART_TEXT, type PartText } from "@/lib/gestureText";
 import { MAX_ROWS, publishDemo, publishModelFile, savePreviewDemo, shrinkImage, type PublishedDemo } from "@/lib/published";
 import styles from "./business.module.css";
 
@@ -34,6 +35,8 @@ type BusinessConfig = {
   modelName: string;
   sections: Section[];
   mappings: Mapping[];
+  /** What each gesture shows, per slide of the interactions viewer ("Whole product" or a part name). */
+  partText?: Record<string, PartText>;
   notes: Record<string, string>; // manual: what was pasted per section
   sectionFiles: Record<string, string>; // manual: pdf chosen per section
   aiBuilt?: boolean; // sections were drafted by the AI from the product doc
@@ -56,7 +59,6 @@ const emptySection = (id: string): Section => {
 };
 const EMPTY_SECTIONS: Section[] = TOPICS.map((t) => emptySection(t.id));
 const GESTURES = ["1 swipe right", "2 swipes right", "3 swipes right", "4 swipes right", "Swipe up", "Swipe down", "Swipe left", "Point / hover"];
-const MODES = ["Slow turn", "Explode apart", "Highlight", "Zoom in", "Put back together"];
 
 // What each section asks for (the subtitle on the section editor).
 const HINTS: Record<string, string> = {
@@ -80,6 +82,7 @@ const defaultConfig: BusinessConfig = {
   modelName: "",
   sections: EMPTY_SECTIONS,
   mappings: [],
+  partText: {},
   notes: {},
   sectionFiles: {},
 };
@@ -95,8 +98,8 @@ const Arrow = ({ dir = "right", size = 14, color = "currentColor" }: { dir?: "ri
 const UploadIcon = ({ w = 26, h = 32, sw = 1.6 }: { w?: number; h?: number; sw?: number }) => (
   <svg width={w} height={h} viewBox="0 0 24 30" fill="none" stroke="#8E94A8" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 11H5.5A1.5 1.5 0 0 0 4 12.5v12A1.5 1.5 0 0 0 5.5 26h13a1.5 1.5 0 0 0 1.5-1.5v-12a1.5 1.5 0 0 0-1.5-1.5H17M12 19V3M8 7l4-4 4 4" /></svg>
 );
-const Chevron = () => (
-  <svg className={styles.chevron} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+const ResetIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
 );
 function GestureIcon({ gesture, compact }: { gesture: string; compact?: boolean }) {
   const g = gesture.toLowerCase();
@@ -121,18 +124,6 @@ function Stepper({ total, current, onJump, wide, long }: { total: number; curren
         </span>
       ))}
     </div>
-  );
-}
-
-function Select({ value, options, onChange, label, className }: { value: string; options: { value: string; label: string }[] | string[]; onChange: (v: string) => void; label: string; className?: string }) {
-  const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
-  return (
-    <span className={`${styles.select} ${className ?? ""}`}>
-      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
-        {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <Chevron />
-    </span>
   );
 }
 
@@ -444,7 +435,6 @@ export default function BusinessPage() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { setNotice("Storage unavailable. Changes last until you refresh."); }
   };
   const updateSection = (id: string, fn: (s: Section) => Section) => save({ ...config, sections: config.sections.map((s) => (s.id === id ? fn(s) : s)) });
-  const updateMapping = (i: number, patch: Partial<Mapping>) => save({ ...config, mappings: config.mappings.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
 
   const DOC = /\.(pdf|txt|md)$/i;
   const DOC_ACCEPT = ".pdf,.txt,.md";
@@ -533,7 +523,13 @@ export default function BusinessPage() {
         const ai = (json.sections as (Partial<Section> & { id: string })[]).find((x) => x.id === s.id);
         return ai ? { ...s, title: ai.title ?? s.title, rows: (ai.rows ?? s.rows).slice(0, MAX_ROWS), source: ai.source, quote: ai.quote, needsReview: ai.needsReview, reviewNote: ai.reviewNote } : s;
       });
-      save({ ...config, productName: json.productName || config.productName, sections, mappings: json.mappings?.length ? json.mappings : config.mappings, aiBuilt: true });
+      const partText = { ...config.partText };
+      for (const t of (json.partText ?? []) as ({ part: string } & PartText)[]) {
+        if (!t?.part) continue;
+        const prev = partText[t.part] ?? EMPTY_PART_TEXT;
+        partText[t.part] = { hover: prev.hover || t.hover || "", pinch: prev.pinch || t.pinch || "", specs: prev.specs || t.specs || "" };
+      }
+      save({ ...config, productName: json.productName || config.productName, sections, mappings: json.mappings?.length ? json.mappings : config.mappings, partText, aiBuilt: true });
       setNotice(`Built from ${docFile.name}. Check anything marked “Needs attention”.`);
       go({ name: "a-edit", id: config.sections[0].id });
     } catch {
@@ -630,13 +626,16 @@ export default function BusinessPage() {
       productName: config.productName,
       sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows: rows.slice(0, MAX_ROWS) })),
       mappings: config.mappings,
+      gestureText: {
+        whole: config.partText?.["Whole product"]?.hover ?? "",
+        parts: Object.fromEntries(Object.entries(config.partText ?? {}).filter(([k]) => k !== "Whole product")),
+      },
       model: pictures,
     };
   };
   const finish = async () => {
     const empty = config.sections.filter((x) => sectionStatus(x) === "insufficient");
     if (empty.length) { setNotice(`Fill in ${empty.map((x) => x.label).join(", ")} before publishing.`); return; }
-    if (config.mappings.length === 0) { setNotice("Add at least one interaction before publishing."); return; }
     setPublishing(true);
     try {
       const demo = await buildDemo(false);
@@ -658,6 +657,17 @@ export default function BusinessPage() {
       setNotice("Couldn't open the preview: storage is blocked in this browser.");
     }
   };
+
+  // Interactions are Good when the whole product and every part have their text, Insufficient when nothing is written.
+  const interactionStatus = (): Status => {
+    const pt = config.partText ?? {};
+    const names = model?.parts.map((p) => p.name) ?? [];
+    const needed = [pt["Whole product"]?.hover ?? "", ...names.flatMap((n) => [pt[n]?.hover ?? "", pt[n]?.pinch ?? ""])];
+    const filled = needed.filter((t) => t.trim()).length;
+    return filled === 0 ? "insufficient" : filled < needed.length ? "attention" : "good";
+  };
+  const setPartText = (label: string, patch: Partial<PartText>) =>
+    save({ ...config, partText: { ...config.partText, [label]: { ...EMPTY_PART_TEXT, ...config.partText?.[label], ...patch } } });
 
   // Progress steps for the current flow.
   const autoStep = screen.name === "a-upload" ? 0 : screen.name === "a-edit" ? 1 : 2;
@@ -741,7 +751,7 @@ export default function BusinessPage() {
     const s = config.sections[at];
     const status = sectionStatus(s);
     const busy = formatting === s.id;
-    const gestureStatus: Status = config.mappings.length === 0 ? "insufficient" : "good";
+    const gestureStatus: Status = interactionStatus();
     const setRow = (i: number, patch: Partial<Row>) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, ...patch } : y)) }));
     const next = config.sections[at + 1];
     body = (
@@ -932,17 +942,29 @@ export default function BusinessPage() {
       : [];
     const idx = Math.max(0, Math.min(partIndex, slides.length - 1));
     const slide = slides[idx] as Slide | undefined;
-    const partOptions = ["Whole product", ...(model?.parts.map((p) => p.name) ?? []), "None"];
-    const showPart = (part: string) => {
-      const i = slides.findIndex((p) => p.label === part);
-      if (i >= 0) setPartIndex(i);
-    };
+    const whole = !slide || slide.label === "Whole product";
+    const text = slide ? { ...EMPTY_PART_TEXT, ...config.partText?.[slide.label] } : EMPTY_PART_TEXT;
+    const set = (patch: Partial<PartText>) => slide && setPartText(slide.label, patch);
+    type GRow = { icon: "right" | "reset"; gesture: string; does: string; key?: keyof PartText; placeholder?: string; fixed?: string; label?: string };
+    const rows: GRow[] = whole
+      ? [
+          { icon: "right", gesture: "Hover", does: "Pauses the spin", key: "hover", placeholder: "Headline shown while paused", label: "Text shown while the spin is paused" },
+          { icon: "right", gesture: "Pinch", does: "—", fixed: "Not used on the whole product" },
+          { icon: "reset", gesture: "Open palm", does: "Resets demo", fixed: "Always on" },
+        ]
+      : [
+          { icon: "right", gesture: "Hover", does: "Pulls part out", key: "hover", placeholder: "Short label", label: `Label shown when ${slide?.label} is pulled out` },
+          { icon: "right", gesture: "Pinch", does: "Zooms in", key: "pinch", placeholder: "One or two sentences", label: `Text shown when zoomed in on ${slide?.label}` },
+          { icon: "right", gesture: "Pinch", does: "Shows specs", key: "specs", placeholder: "Optional", label: `Specs shown when zoomed in on ${slide?.label}` },
+          { icon: "reset", gesture: "Open palm", does: "Resets demo", fixed: "Always on" },
+        ];
+    const nextSwipe = GESTURES.find((g) => g !== "Point / hover" && !config.mappings.some((m) => m.gesture === g)) ?? GESTURES[0];
     body = (
       <>
         <div className={styles.guide}><h1>INTERACTIONS</h1><p>Scroll through {model ? `the parts of ${model.fileName}` : "the parts"} and map each gesture</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
         <div className={styles.listTools}>
-          <button type="button" className={styles.dashedBtn} onClick={() => save({ ...config, mappings: [...config.mappings, { gesture: GESTURES.find((g) => !config.mappings.some((m) => m.gesture === g)) ?? GESTURES[0], sectionId: config.sections[0].id, part: slide?.label ?? "Whole product", mode: "Highlight" }] })}>+ ADD INTERACTION</button>
+          <button type="button" className={styles.dashedBtn} disabled={!slide} title={slide ? `Add a swipe that shows ${slide.label}` : "Upload a 3D model first"} onClick={() => slide && save({ ...config, mappings: [...config.mappings, { gesture: nextSwipe, sectionId: config.sections[0].id, part: slide.label, mode: "Highlight" }] })}>+ ADD INTERACTION</button>
         </div>
         {slides.length === 0 ? (
           <div className={`${styles.card} ${styles.viewer} ${styles.viewerEmpty}`}>
@@ -958,23 +980,27 @@ export default function BusinessPage() {
           inContext={inContext}
           onToggleContext={() => setInContext((v) => !v)}
           gestures={(label) => config.mappings.filter((m) => m.part === label).map((m) => m.gesture)}
+          onRemoveGesture={(label, gesture) => save({ ...config, mappings: config.mappings.filter((m) => !(m.part === label && m.gesture === gesture)) })}
         />
         )}
         <div className={`${styles.card} ${styles.gestureCard}`}>
-          <div className={styles.gestureHead}><span>GESTURE</span><span>SHOWS</span><span>HIGHLIGHTS</span><span>MODEL DOES</span><span /></div>
+          <div className={styles.gestureHead}><span /><span>GESTURE</span><span>DOES</span><span>WHAT IT SAYS</span></div>
           <div className={styles.gestureRows}>
-            {config.mappings.map((m, i) => (
-              <div key={i} className={styles.gestureRow} data-match={slide && m.part === slide.label ? "" : undefined} onClick={() => showPart(m.part)}>
-                <span className={styles.gestureName}><GestureIcon gesture={m.gesture} compact /><Select className={styles.gestureSelect} label={`Gesture ${i + 1}`} value={m.gesture} options={GESTURES.includes(m.gesture) ? GESTURES : [m.gesture, ...GESTURES]} onChange={(v) => updateMapping(i, { gesture: v })} /></span>
-                <Select label={`Text for ${m.gesture}`} value={m.sectionId} options={config.sections.map((s) => ({ value: s.id, label: s.label }))} onChange={(v) => updateMapping(i, { sectionId: v })} />
-                <Select label={`Part for ${m.gesture}`} value={m.part} options={partOptions.includes(m.part) ? partOptions : [m.part, ...partOptions]} onChange={(v) => { updateMapping(i, { part: v }); showPart(v); }} />
-                <Select label={`Model action for ${m.gesture}`} value={m.mode} options={MODES} onChange={(v) => updateMapping(i, { mode: v })} />
-                <button type="button" className={styles.remove} aria-label={`Remove ${m.gesture}`} onClick={(e) => { e.stopPropagation(); save({ ...config, mappings: config.mappings.filter((_, j) => j !== i) }); }}>×</button>
+            {!slide && <p className={styles.emptyNote}>Upload a 3D model to write what each gesture shows on its parts.</p>}
+            {slide && rows.map((r, i) => (
+              <div key={`${slide.label}-${i}`} className={styles.gestureRow} data-match={i === 0 ? "" : undefined}>
+                <span className={styles.gestureIcon} aria-hidden="true">{r.icon === "reset" ? <ResetIcon /> : <Arrow size={14} />}</span>
+                <span className={styles.gestureCell}>{r.gesture}</span>
+                <span className={`${styles.gestureCell} ${styles.gestureDoes}`}>{r.does}</span>
+                {r.key ? (
+                  <Cell label={r.label ?? r.gesture} placeholder={r.placeholder} value={text[r.key]} onChange={(v) => set({ [r.key!]: v })} />
+                ) : (
+                  <span className={`${styles.gestureCell} ${styles.gestureFixed}`}>{r.fixed}</span>
+                )}
               </div>
             ))}
-            {config.mappings.length === 0 && <p className={styles.mutedSmall}>No interactions yet. Add one above.</p>}
           </div>
-          <p className={styles.gestureNote}>Open palm (hold) always resets the demo</p>
+          <p className={styles.gestureNote}>On What it is, What’s different and Where it’s used, hover just pauses the spin</p>
         </div>
         <Foot back={{ label: "BACK", onClick: backFromGestures }} next={<>
           <button type="button" className={styles.outlineBtnDim} onClick={tryIt} title="Open the kiosk with what is filled in so far (not published)">TRY IT</button>
@@ -1063,13 +1089,14 @@ type Slide = { label: string; part: ReactNode; context: ReactNode };
 // eslint-disable-next-line @next/next/no-img-element
 const ModelImage = ({ src }: { src: string }) => <img className={styles.slideImg} src={src} alt="" draggable={false} />;
 
-function PartViewer({ slides, index, onIndex, inContext, onToggleContext, gestures }: {
+function PartViewer({ slides, index, onIndex, inContext, onToggleContext, gestures, onRemoveGesture }: {
   slides: Slide[];
   index: number;
   onIndex: (i: number) => void;
   inContext: boolean;
   onToggleContext: () => void;
   gestures: (label: string) => string[];
+  onRemoveGesture: (label: string, gesture: string) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const shown = useRef(index); // the slide the scroll position is on
@@ -1192,7 +1219,12 @@ function PartViewer({ slides, index, onIndex, inContext, onToggleContext, gestur
       <div className={styles.viewerBottom}>
         <span className={styles.viewerName}>{slide.label}</span>
         <span className={styles.viewerUsed}>
-          {used.length ? used.map((g) => <span key={g} className={styles.usedChip}><GestureIcon gesture={g} />{g}</span>) : <span className={styles.mutedSmall}>No gesture highlights this part yet</span>}
+          {used.length ? used.map((g) => (
+            <span key={g} className={styles.usedChip}>
+              <GestureIcon gesture={g} />{g}
+              <button type="button" className={styles.usedChipRemove} aria-label={`Remove ${g} from ${slide.label}`} onClick={() => onRemoveGesture(slide.label, g)}>×</button>
+            </span>
+          )) : <span className={styles.mutedSmall}>{index === 0 ? "Hover pauses the spin" : "Pulls out on hover · zooms in on pinch"}</span>}
         </span>
       </div>
       <div className={styles.stepRail}>

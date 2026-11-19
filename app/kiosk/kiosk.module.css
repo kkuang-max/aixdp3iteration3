@@ -1183,3 +1183,78 @@ video.camVideo {
   color: #9aa0b3;
 }
 
+/* ---- Hold and pinch on the model ---- */
+.model[data-paused] {
+  animation-play-state: paused;
+}
+
+/* The area the kiosk treats as "over the model" (hit-tested by position, so it never blocks the parts). */
+.modelZone {
+  position: absolute;
+  left: 400px;
+  top: 70px;
+  width: 460px;
+  height: 495px;
+  pointer-events: none;
+}
+
+.modelZoom {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform 160ms ease-out;
+}
+
+.callout {
+  position: absolute;
+  left: 430px;
+  top: 530px;
+  width: 400px;
+  padding: 12px 18px;
+  border: 1px solid rgba(200, 216, 255, 0.45);
+  border-radius: 16px;
+  background: rgba(19, 24, 38, 0.86);
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  animation: rise 250ms ease-out both;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.callout[data-zoomed] {
+  top: 455px;
+  gap: 6px;
+  padding: 16px 22px;
+}
+
+.calloutName {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: #c8d8ff;
+}
+
+.calloutBody {
+  font-size: 17px;
+  line-height: 1.35;
+  color: #eef1f8;
+}
+
+.calloutSpecs {
+  font-size: 14px;
+  color: #c9cfdd;
+}
+
+.calloutHint {
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #aeb4c6;
+}
+

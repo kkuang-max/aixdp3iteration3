@@ -33,6 +33,14 @@ const SMOOTHING = 0.45;
 const TRAIL_LEN = 10;
 const TAU_EXPLODE = 0.35; // easing time constant (s) for the earbud coming apart
 
+// Hold and pinch on the 3D model.
+const HOLD_MS = { hand: 300, mouse: 120 }; // resting over the model this long stops it turning
+const HOLD_GRACE_MS = 450; // keep holding through brief slips off the model (longer while zoomed: 900)
+const PINCH_GAIN = 0.9; // zoom per unit of thumb–index spread (spread is measured in hand sizes)
+const PINCH_DEADBAND = 0.012; // ignore tiny frame-to-frame changes in spread (tracking jitter)
+const TOUCH_GAIN = 1.1; // zoom per unit of two-finger distance ratio on a touchscreen
+const clamp01 = (v: number) => Math.min(Math.max(v, 0), 1);
+
 // The camera loses a hand near the edge of its view. Held there this long → ask the visitor to move it.
 const EDGE_WARN_MS = 700;
 const EDGE_TIPS = {
@@ -53,6 +61,8 @@ export default function Kiosk() {
   // On "How it works" and "Specs": the row a visitor is pointing at or swiped to (its part lights up).
   const [activeRow, setActiveRow] = useState<number | null>(null);
   const [modelPart, setModelPart] = useState<string | null>(null); // the part of the model under the pointer
+  // Holding over the model stops it turning (and on How it works / Specs pulls the pointed part out); pinching zooms in.
+  const [hold, setHold] = useState<{ holding: boolean; zoom: number; part: string | null; origin: string }>({ holding: false, zoom: 0, part: null, origin: "50% 50%" });
   const [explode, setExplode] = useState(topicExplode(DEFAULT_TOPIC));
   // The session lives in a ref (time per topic grows every frame); screens get a snapshot of it.
   const [view, setView] = useState<Session>(newSession);
@@ -147,6 +157,17 @@ export default function Kiosk() {
     rowFromHover: false,
     edge: null as Edge | null,
     edgeSince: 0,
+    // Hold and pinch on the model
+    zoneSince: 0, // when the pointer came over the model (0 = not over it)
+    zoneLeft: 0, // when it last left it
+    holding: false,
+    zoom: 0, // 0 = normal, 1 = fully zoomed in on a part
+    zoomPart: null as string | null, // the part being zoomed in on (locked while zoomed)
+    zoomOrigin: "50% 50%",
+    spread: -1, // smoothed thumb–index spread, in hand sizes (-1 = not measured yet)
+    touchD0: 0,
+    touchZ0: 0,
+    leaveTimer: undefined as ReturnType<typeof setTimeout> | undefined,
   });
 
   const bump = useCallback(() => setView({ ...session.current, time: { ...session.current.time }, picked: [...session.current.picked] }), []);
@@ -240,6 +261,76 @@ export default function Kiosk() {
     [markPresent],
   );
 
+  // ---- Hold and pinch on the model --------------------------------------------
+  // Zoom only works on a part, on the topics whose parts can be pointed at (How it works, Specs).
+  const zoomable = () => {
+    const s = ix.current;
+    return s.screen === "hub" && PART_TOPICS.has(TOPICS[s.topic].id) && !!(s.zoomPart ?? s.modelPart);
+  };
+  const pushHold = useCallback(() => {
+    const s = ix.current;
+    const part = s.zoom > 0.02 ? s.zoomPart : s.modelPart;
+    setHold((h) => (h.holding === s.holding && Math.abs(h.zoom - s.zoom) < 0.01 && h.part === part && h.origin === s.zoomOrigin ? h : { holding: s.holding, zoom: s.zoom, part, origin: s.zoomOrigin }));
+  }, []);
+  const setZoom = useCallback((z: number) => {
+    const s = ix.current;
+    const next = zoomable() ? clamp01(z) : 0;
+    if (next > 0 && s.zoom === 0) s.zoomPart = s.modelPart; // lock onto the part being pinched
+    if (next === 0) s.zoomPart = null;
+    s.zoom = next;
+    pushHold();
+  }, [pushHold]);
+  /** Is the point over the model's area (not just one of its parts)? Also sets where a zoom grows from. */
+  const overModel = (x: number, y: number) => {
+    const zone = document.querySelector("[data-model-zone]");
+    if (!zone) return false;
+    const r = zone.getBoundingClientRect();
+    const inside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    // Zoom grows from the held point, kept near the middle so the part doesn't slide under the text panel.
+    const pct = (v: number) => (Math.min(Math.max(v, 0.3), 0.7) * 100).toFixed(1);
+    if (inside && ix.current.zoom === 0) ix.current.zoomOrigin = `${pct((x - r.left) / r.width)}% ${pct((y - r.top) / r.height)}%`;
+    return inside;
+  };
+  const updateHold = useCallback((x: number, y: number, source: "hand" | "mouse", now: number) => {
+    const s = ix.current;
+    const inside = s.screen === "hub" && overModel(x, y);
+    clearTimeout(s.leaveTimer);
+    if (inside) {
+      if (!s.zoneSince) s.zoneSince = now;
+      s.zoneLeft = 0;
+    } else if (s.zoneSince) {
+      if (!s.zoneLeft) s.zoneLeft = now;
+      const grace = s.zoom > 0 ? 900 : HOLD_GRACE_MS;
+      if (now - s.zoneLeft > grace) s.zoneSince = 0;
+      // A mouse that stops moving off the model still lets go once the grace time is up.
+      else s.leaveTimer = setTimeout(() => updateHoldRef.current(x, y, source, performance.now()), grace - (now - s.zoneLeft) + 20);
+    }
+    const holding = !!s.zoneSince && now - s.zoneSince >= HOLD_MS[source];
+    if (holding !== s.holding) {
+      s.holding = holding;
+      if (!holding) setZoom(0);
+    }
+    pushHold();
+  }, [pushHold, setZoom]);
+  const updateHoldRef = useRef(updateHold);
+  useEffect(() => {
+    updateHoldRef.current = updateHold;
+  }, [updateHold]);
+  const releaseHold = useCallback(() => {
+    const s = ix.current;
+    s.zoneSince = 0;
+    s.holding = false;
+    s.spread = -1;
+    setZoom(0);
+  }, [setZoom]);
+  // A new topic or screen starts un-zoomed.
+  useEffect(() => {
+    const s = ix.current;
+    s.zoom = 0;
+    s.zoomPart = null;
+    pushHold();
+  }, [topic, screen, pushHold]);
+
   // ---- Pointing: whatever the hand (or mouse) is over ------------------------
   // Hands press things by holding still over them (dwell); the mouse only dwells on topics and clicks the rest.
   const pointAt = useCallback((x: number, y: number, source: "hand" | "mouse", now: number) => {
@@ -263,6 +354,7 @@ export default function Kiosk() {
     const cursor = cursorRef.current;
     cursor?.toggleAttribute("data-over", !!target);
     cursor?.toggleAttribute("data-dwelling", !!target && !s.dwellFired);
+    updateHold(x, y, source, now);
 
     // In swipe mode a hand picks rows by swiping, so its pointer doesn't also hover them.
     if (source === "hand" && swipeModeRef.current) return;
@@ -282,7 +374,8 @@ export default function Kiosk() {
       s.rowFromHover = row !== null;
       setActiveRow(row);
     }
-  }, []);
+    if (part !== null || !s.holding) pushHold();
+  }, [updateHold, pushHold]);
 
   const pointerGone = useCallback(() => {
     const s = ix.current;
@@ -297,7 +390,8 @@ export default function Kiosk() {
       s.modelPart = null;
       setModelPart(null);
     }
-  }, []);
+    releaseHold();
+  }, [releaseHold]);
 
   // ---- Hand input -------------------------------------------------------
   const onHand = useCallback(
@@ -382,8 +476,23 @@ export default function Kiosk() {
       if (s.trail.length > TRAIL_LEN) s.trail.shift();
       trailRef.current?.setAttribute("points", s.trail.map((p) => p.join(",")).join(" "));
       pointAt(s.x, s.y, "hand", now);
+
+      // Pinch: spreading the thumb and index fingertips apart zooms in (as on a touchscreen); closing them zooms out.
+      // Measured in hand sizes (wrist to middle knuckle) so it works near and far from the camera.
+      const lm = hand.landmarks;
+      if (lm?.length >= 10) {
+        const d = (a: number, b: number) => Math.hypot((lm[a].x - lm[b].x) * hand.aspect, lm[a].y - lm[b].y);
+        const size = d(0, 9);
+        if (size > 1e-3) {
+          const spread = d(4, 8) / size;
+          const prev = s.spread;
+          s.spread = prev < 0 ? spread : prev * 0.5 + spread * 0.5;
+          const delta = prev < 0 ? 0 : s.spread - prev;
+          if (s.holding && Math.abs(delta) > PINCH_DEADBAND) setZoom(s.zoom + delta * PINCH_GAIN);
+        }
+      }
     },
-    [onSwipe, pointAt, pointerGone, markPresent],
+    [onSwipe, pointAt, pointerGone, markPresent, setZoom],
   );
 
   const status = useHandTracking(videoRef, camCanvasRef, onHand, ACCENT, cameraOn);
@@ -459,6 +568,45 @@ export default function Kiosk() {
         else document.documentElement.requestFullscreen().catch(() => {});
       }
     };
+    // Trackpad pinch (the browser reports it as a wheel with Ctrl) or the scroll wheel over the model zooms.
+    const wheel = (e: WheelEvent) => {
+      const s = ix.current;
+      if (s.screen !== "hub" || !overModel(e.clientX, e.clientY)) return;
+      e.preventDefault();
+      markPresent(performance.now());
+      setZoom(s.zoom - e.deltaY * (e.ctrlKey ? 0.012 : 0.003));
+    };
+    // Touchscreen: a finger on the model holds it; two fingers spread apart zoom in.
+    let touchTimer: ReturnType<typeof setTimeout> | undefined;
+    const touchDist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const touchStart = (e: TouchEvent) => {
+      const s = ix.current;
+      const t = e.touches[0];
+      if (s.screen !== "hub" || !overModel(t.clientX, t.clientY)) return;
+      clearTimeout(touchTimer);
+      s.zoneSince = performance.now() - HOLD_MS.mouse;
+      s.holding = true;
+      if (e.touches.length >= 2) {
+        s.touchD0 = touchDist(e.touches);
+        s.touchZ0 = s.zoom;
+      }
+      pushHold();
+    };
+    const touchMove = (e: TouchEvent) => {
+      const s = ix.current;
+      if (e.touches.length < 2 || !s.holding || !s.touchD0) return;
+      e.preventDefault();
+      setZoom(s.touchZ0 + (touchDist(e.touches) / s.touchD0 - 1) * TOUCH_GAIN);
+    };
+    const touchEnd = (e: TouchEvent) => {
+      const s = ix.current;
+      if (e.touches.length < 2) s.touchD0 = 0;
+      if (e.touches.length === 0 && s.holding) touchTimer = setTimeout(releaseHold, 4000); // time to read the text
+    };
+    window.addEventListener("wheel", wheel, { passive: false });
+    window.addEventListener("touchstart", touchStart, { passive: true });
+    window.addEventListener("touchmove", touchMove, { passive: false });
+    window.addEventListener("touchend", touchEnd);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerdown", down);
     window.addEventListener("keydown", key);
@@ -466,6 +614,11 @@ export default function Kiosk() {
     window.addEventListener("blur", blur);
     document.documentElement.addEventListener("pointerleave", pointerGone);
     return () => {
+      clearTimeout(touchTimer);
+      window.removeEventListener("wheel", wheel);
+      window.removeEventListener("touchstart", touchStart);
+      window.removeEventListener("touchmove", touchMove);
+      window.removeEventListener("touchend", touchEnd);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener("keydown", key);
@@ -473,7 +626,7 @@ export default function Kiosk() {
       window.removeEventListener("blur", blur);
       document.documentElement.removeEventListener("pointerleave", pointerGone);
     };
-  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor, toggleSwipeMode]);
+  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor, toggleSwipeMode, setZoom, pushHold, releaseHold]);
 
   // ---- Frame loop: dwell, time per topic, attract loop, reset, explode easing ----
   useEffect(() => {
@@ -579,6 +732,7 @@ export default function Kiosk() {
             onPick={(i) => pickTopic(i)}
             activeRow={activeRow}
             modelPart={modelPart}
+            hold={hold}
             onRow={(i) => { ix.current.activeRow = i; ix.current.rowFromHover = false; setActiveRow(i); }}
             explode={explode}
             accent={ACCENT}

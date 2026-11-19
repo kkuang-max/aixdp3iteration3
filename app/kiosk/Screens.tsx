@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
+import { SAMPLE_GESTURE_TEXT, SAMPLE_PART_NAMES, type GestureText } from "@/lib/gestureText";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { matchPart, type PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
@@ -69,7 +70,7 @@ const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.t
 const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
@@ -84,7 +85,7 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} />
+            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} />
           </div>
         </>
       );
@@ -101,7 +102,49 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
     );
   }
   if (demo) return <NoModel />;
-  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} />;
+  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} paused={props.paused} pull={props.pull as PartId | null} />;
+}
+
+/** What holding and pinching show: the whole product's line, a part's label, or (zoomed in) its text and specs. */
+function GestureCallout(props: { text: GestureText; sample: boolean; part: string | null; whole: boolean; zoom: number }) {
+  const { text, part, zoom } = props;
+  if (part) {
+    const t = text.parts[part];
+    const name = props.sample ? (SAMPLE_PART_NAMES[part] ?? part) : part;
+    if (zoom > 0.35 && (t?.pinch || t?.specs)) {
+      return (
+        <div className={styles.callout} data-zoomed="" role="status">
+          <span className={styles.calloutName}>{name.toUpperCase()}</span>
+          {t.pinch && <span className={styles.calloutBody}>{t.pinch}</span>}
+          {t.specs && <span className={styles.calloutSpecs}>{t.specs}</span>}
+        </div>
+      );
+    }
+    return (
+      <div className={styles.callout} role="status">
+        <span className={styles.calloutName}>{name.toUpperCase()}</span>
+        {t?.hover && <span className={styles.calloutBody}>{t.hover}</span>}
+        {(t?.pinch || t?.specs) && <span className={styles.calloutHint}><PinchIcon /> Spread your thumb and finger apart to zoom in</span>}
+      </div>
+    );
+  }
+  if (props.whole && text.whole) {
+    return (
+      <div className={styles.callout} role="status">
+        <span className={styles.calloutBody}>{text.whole}</span>
+      </div>
+    );
+  }
+  return null;
+}
+
+/** Thumb and index finger moving apart. */
+function PinchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 20l6-6M20 4l-6 6M4 20v-5M4 20h5M20 4v5M20 4h-5" />
+    </svg>
+  );
 }
 
 /** The portal's demo has no 3D model yet: say so instead of showing the sample earbud. */
@@ -133,6 +176,8 @@ export function Hub(props: {
   onPick: (i: number) => void;
   activeRow: number | null;
   modelPart: string | null; // the part of the model under the pointer
+  /** Holding over the model (stops it turning, pulls the part out) and pinch zoom (0..1) on a part. */
+  hold: { holding: boolean; zoom: number; part: string | null; origin: string };
   onRow: (i: number) => void;
   explode: number;
   accent: string;
@@ -161,6 +206,13 @@ export function Hub(props: {
   const litPart = hoverPart ?? (active ? rowPart(active) : null);
   const highlight = !interactive ? NO_PARTS : !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
+  // Hold and pinch: only parts on How it works / Specs pull out and zoom; elsewhere holding just stops the spin.
+  const pulled = interactive && props.hold.holding ? props.hold.part : null;
+  const zoom = interactive && props.hold.part ? props.hold.zoom : 0;
+  const zoomOrigin = props.hold.origin;
+  // A published demo shows only what the business wrote (nothing is made up); before anything is published, the
+  // built-in Orbit Earbuds example.
+  const gestureText: GestureText = demo ? (demo.gestureText ?? { whole: "", parts: {} }) : SAMPLE_GESTURE_TEXT;
   return (
     <>
       <div className={styles.eyebrow}>
@@ -199,7 +251,19 @@ export function Hub(props: {
         })}
       </nav>
 
-      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} />
+      {/* The model: holding over it stops it turning (and on How it works / Specs pulls the pointed part out);
+          pinching zooms in on that part. data-model-zone is the area the kiosk treats as "over the model". */}
+      <div className={styles.modelZone} data-model-zone="" aria-hidden="true" />
+      <div className={styles.modelZoom} style={{ transform: `scale(${1 + zoom * 0.5})`, transformOrigin: zoomOrigin }}>
+        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding} pull={pulled} />
+      </div>
+      <GestureCallout
+        text={gestureText}
+        sample={!demo}
+        part={interactive && props.hold.holding ? props.hold.part : null}
+        whole={!interactive && props.hold.holding}
+        zoom={zoom}
+      />
 
       <section key={t.id} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>

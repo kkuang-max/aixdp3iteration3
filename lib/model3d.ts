@@ -45,19 +45,20 @@ export function buildModel<Id extends string>(o: {
   accent: string;
   explode: number; // 0 assembled → 1 exploded
   highlight: readonly Id[];
+  pull?: Id | null; // a part held by the visitor: pulled further out than the rest
 }): ModelSlice[] {
   const G = o.geo;
   const k = o.w / G.vbw;
   const N = 22;
   const zm = G.zm;
   const step = (2 * zm) / (N - 1);
-  const e = o.explode;
   const slices: ModelSlice[] = [];
 
   for (let i = 0; i < N; i++) {
     const z = -zm + step * i;
     const paths: ModelPath[] = [];
     for (const p of G.parts) {
+      const e = o.pull === p.id ? o.explode + 0.55 : o.explode;
       const dz = z - ((p.zc ?? 0) + (p.ze ?? 0) * e);
       if (Math.abs(dz) > p.hd) continue;
       const front = dz + step > p.hd;

@@ -12,19 +12,19 @@ import styles from "./kiosk.module.css";
 /** Kiosk asks a live model which part is under a screen point (for hover). */
 export const livePickers = new WeakMap<HTMLCanvasElement, (x: number, y: number) => string | null>();
 
-type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void };
+type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; pull?: string | null };
 
 const SIZE = 460; // CSS px, the same box as the sample earbud
 const SWAY_S = 14; // one sway cycle, as the sample earbud
 const EASE = 3.5; // how fast explode / camera moves settle (per second)
 
-export default function LiveModel({ name, data, part, mode, accent, onFail }: Props) {
+export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, pull = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const target = useRef({ part, mode });
+  const target = useRef({ part, mode, paused, pull });
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    target.current = { part, mode };
-  }, [part, mode]);
+    target.current = { part, mode, paused, pull };
+  }, [part, mode, paused, pull]);
   const failRef = useRef(onFail);
   useEffect(() => {
     failRef.current = onFail;
@@ -92,7 +92,7 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
         const from = parent.worldToLocal(c.clone());
         const to = parent.worldToLocal(c.clone().addScaledVector(dir, radius * 0.45));
         const local = to.sub(from);
-        return { ...p, home: p.node.position.clone(), away: local, center: c, size: Math.max(box.getSize(new THREE.Vector3()).length() / 2, radius * 0.08) };
+        return { ...p, home: p.node.position.clone(), away: local, center: c, pulled: 0, size: Math.max(box.getSize(new THREE.Vector3()).length() / 2, radius * 0.08) };
       });
 
       // Lit and dimmed versions of each mesh's material.
@@ -135,13 +135,14 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
 
       let explode = 0;
       let turn = 0;
+      let swayClock = performance.now() / 1000;
       let last = performance.now();
       const tick = (now: number) => {
         raf = requestAnimationFrame(tick);
         const dt = Math.min((now - last) / 1000, 0.1);
         last = now;
         const k = 1 - Math.exp(-dt * EASE);
-        const { part: want, mode: how } = target.current;
+        const { part: want, mode: how, paused: hold, pull: held } = target.current;
         const litName = want && want !== "Whole product" && want !== "None" ? want : null;
         const focus = info.find((p) => p.name === litName);
 
@@ -153,12 +154,18 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
         // Explode
         const wantExplode = how === "Explode apart" ? 1 : how === "Put back together" ? 0 : focus ? 0.25 : 0;
         explode += (wantExplode - explode) * k;
-        for (const p of info) p.node.position.copy(p.home).addScaledVector(p.away, explode);
+        // A part the visitor holds is pulled out further than the rest.
+        for (const p of info) {
+          p.pulled += ((p.name === held ? 1 : 0) - p.pulled) * k;
+          p.node.position.copy(p.home).addScaledVector(p.away, explode + p.pulled * 0.9);
+        }
 
         // Turn: slow full turn, or a gentle sway like the sample earbud
-        if (how === "Slow turn") turn += dt * ((Math.PI * 2) / 20);
-        const sway = how === "Slow turn" ? turn : Math.sin((now / 1000 / SWAY_S) * Math.PI * 2) * 0.55;
-        pivot.rotation.y += (sway - pivot.rotation.y) * (how === "Slow turn" ? 1 : k);
+        // Holding over the model stops it turning; it picks up again from where it stopped.
+        if (!hold) swayClock += dt;
+        if (how === "Slow turn" && !hold) turn += dt * ((Math.PI * 2) / 20);
+        const sway = how === "Slow turn" ? turn : Math.sin((swayClock / SWAY_S) * Math.PI * 2) * 0.55;
+        if (!hold) pivot.rotation.y += (sway - pivot.rotation.y) * (how === "Slow turn" ? 1 : k);
 
         // Camera: whole model, or close on the part for Zoom in
         let wantPos = viewDir.clone().multiplyScalar(dist);

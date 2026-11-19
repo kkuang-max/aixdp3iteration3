@@ -198,6 +198,14 @@ Two hand modes, switched with **C + S** (see the shortcuts below):
 If the hand stays near an edge of the camera view, the kiosk says so ("Raise your hand a little…"), because the camera
 loses hands near the edges.
 
+**Hold and pinch on the model.** Holding a hand (or the mouse, or a finger) over the 3D model stops it turning. On
+How it works and Specs, it also pulls the part under the pointer out of the model and shows its short label. Pinching
+zooms in on that part, the way people zoom on a phone: spread the thumb and index finger apart in front of the camera
+(closing them zooms back out), spread two fingers on a touchscreen, or pinch on a trackpad (the scroll wheel works
+too). Zoomed in, the kiosk shows the part's longer text and specs. Moving off the model lets go. What each gesture
+says is written per part on the business side's Interactions screen (Gesture → Does → What it says); on What it is,
+What's different and Where it's used, holding just pauses the spin and shows the whole product's line.
+
 ## How swipes are read
 
 - Each movement is judged as one whole stroke, from when the hand speeds up to when it slows down, so fast flicks,

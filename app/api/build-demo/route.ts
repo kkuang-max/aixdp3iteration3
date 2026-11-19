@@ -36,7 +36,16 @@ Then map the hand gestures. The kiosk shows a 3D model of the product; each gest
 highlights one part of the model. Build a swipe-right sequence that walks a visitor through the product:
 "1 swipe right" shows "what" on the Whole product with a Slow turn; "2 swipes right" to "4 swipes right" step through
 the most important parts named in "how" and "different", using the given part names exactly; "Swipe up" shows "specs";
-"Swipe left" goes back to "what" with Put back together. Use only part names from the list you are given.`;
+"Swipe left" goes back to "what" with Put back together. Use only part names from the list you are given.
+
+Finally, write what the kiosk shows when a visitor uses their hand on the 3D model (partText), one entry for
+"Whole product" and one for each part name you are given, using those names exactly:
+- hover: shown while the visitor holds their hand over it. For "Whole product", a one-line headline (at most about 60
+  characters). For a part, a short label of what it does (at most about 30 characters), e.g. "Seals the sound in".
+- pinch: shown when they pinch to zoom in on a part: one or two plain sentences (at most about 140 characters). Empty
+  for "Whole product".
+- specs: the part's key numbers, if the document gives any (at most about 60 characters), else empty.
+Same rules as the sections: only facts from the document, bracketed placeholders for anything missing.`;
 
 export async function POST(request: Request) {
   const notSetUp = aiNotSetUp();
@@ -69,6 +78,7 @@ export async function POST(request: Request) {
         reviewNote: z.string(),
       }),
     ),
+    partText: z.array(z.object({ part: z.string(), hover: z.string(), pinch: z.string(), specs: z.string() })),
     mappings: z.array(
       z.object({
         gesture: z.enum(GESTURES),
@@ -117,7 +127,10 @@ export async function POST(request: Request) {
     const sections = SECTION_IDS.map((id) => out.sections.find((s) => s.id === id))
       .filter((s) => s !== undefined)
       .map((s) => ({ ...s, rows: s.rows.slice(0, MAX_ROWS) }));
-    return Response.json({ productName: out.productName, sections, mappings: out.mappings, model: response.model });
+    // Only the whole product and the model's own parts.
+    const known = new Set(["Whole product", ...parts]);
+    const partText = out.partText.filter((t) => known.has(t.part));
+    return Response.json({ productName: out.productName, sections, mappings: out.mappings, partText, model: response.model });
   } catch (error) {
     return aiErrorResponse(error);
   }
