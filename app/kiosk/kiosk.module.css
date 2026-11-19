@@ -601,12 +601,18 @@ video.camVideo {
   min-height: 56px;
   padding: 0 18px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.4); /* at least 3:1 against the panel (WCAG 1.4.11) */
   background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
   font: inherit;
   font-size: 17px;
   user-select: text;
+}
+
+/* Placeholders such as you@company.com: white 60%, at least 4.5:1 on the form panel (WCAG 1.4.3). */
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+  opacity: 1;
 }
 
 .input[aria-invalid] {
@@ -615,7 +621,7 @@ video.camVideo {
 
 .inputSmall {
   min-height: 48px;
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.04);
   font-size: 16px;
 }
@@ -905,6 +911,12 @@ video.camVideo {
   color: #c9cedd;
 }
 
+.confirmNote {
+  margin-top: 30px;
+  font-size: 16px;
+  color: #c9cedd;
+}
+
 .countdown {
   position: relative;
   width: 124px;
@@ -1104,4 +1116,189 @@ video.camVideo {
 
 .modelPicture:has([data-live-model][data-ready]) {
   pointer-events: auto;
+}
+
+/* ---- "Try it" preview from the portal: only what is filled in ---- */
+.previewTag {
+  position: absolute;
+  z-index: 30;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid rgba(242, 194, 122, 0.55);
+  border-radius: 999px;
+  background: rgba(242, 194, 122, 0.14);
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  gap: 10px;
+  padding-right: 4px;
+  color: #f2c27a;
+}
+
+.previewClose {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(242, 194, 122, 0.18);
+  color: #f2c27a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.previewClose:hover,
+.previewClose:focus-visible {
+  background: #f2c27a;
+  color: #1b2036;
+  outline: none;
+}
+
+.panelTitle[data-empty] {
+  color: #9aa0b3;
+  font-weight: 400;
+}
+
+.noModel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.noModel span {
+  padding: 14px 22px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  font-size: 15px;
+  color: #9aa0b3;
+}
+
+/* ---- Hold and pinch on the model ---- */
+.model[data-paused] {
+  animation-play-state: paused;
+}
+
+/* The area the kiosk treats as "over the model" (hit-tested by position, so it never blocks the parts). */
+.modelZone {
+  position: absolute;
+  left: 400px;
+  top: 70px;
+  width: 460px;
+  height: 495px;
+  pointer-events: none;
+}
+
+.modelZoom {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform 160ms ease-out;
+}
+
+/* Zoomed in on a part: the right-hand panel shows just that part. */
+.modelZoom {
+  transition: transform 350ms ease-out;
+}
+
+.partDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.partDetailLead {
+  font-size: 19px;
+  font-weight: 600;
+  color: #c8d8ff;
+}
+
+.partDetailBody {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+  color: #eef1f8;
+}
+
+.partDetailSpecs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 16px;
+  color: #c9cfdd;
+}
+
+.partDetailLabel {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: #aeb4c6;
+}
+
+/* Zoomed in: only the model area shows the model, so other parts don't slide over the topics or the text. */
+.modelZoomClip {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.modelZoomClip:has(> .modelZoom[data-zoomed]) {
+  /* Zoomed in: the model only shows between the topics and the text, fading out at the edges. The zoomed part itself
+     always fits inside (it's sized to 360×400 around 630,320). */
+  -webkit-mask-image: linear-gradient(to right, transparent 370px, #000 410px, #000 812px, transparent 842px),
+    linear-gradient(to bottom, transparent 70px, #000 105px, #000 560px, transparent 600px);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 370px, #000 410px, #000 812px, transparent 842px),
+    linear-gradient(to bottom, transparent 70px, #000 105px, #000 560px, transparent 600px);
+  mask-composite: intersect;
+}
+
+/* ---- Loading: shown until the published demo and its 3D model have arrived (never the demo earbud) ---- */
+.loadingScreen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.loadingSpinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(200, 216, 255, 0.2);
+  border-top-color: #c8d8ff;
+  border-radius: 50%;
+  animation: loading-spin 900ms linear infinite;
+}
+
+.loadingTitle {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.loadingSub {
+  font-size: 15px;
+  color: #c9cfdd;
+}
+
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

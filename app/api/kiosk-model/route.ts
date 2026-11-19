@@ -2,10 +2,21 @@
 // Works for private and public Blob stores.
 
 import { get } from "@vercel/blob";
+import { adminClient, boothBusiness } from "@/lib/supabaseServer";
 
 export async function GET(request: Request) {
+  const params = new URL(request.url).searchParams;
+  const path = params.get("path") ?? "";
+  // A booth's model, uploaded to the business's own Supabase folder (uploads/<business id>/model/…).
+  if (path.startsWith("sb:")) {
+    const owner = await boothBusiness(params.get("booth"));
+    const key = path.slice(3);
+    if (!owner || !key.startsWith(`${owner.business}/model/`)) return new Response("not found", { status: 404 });
+    const { data, error } = await adminClient().storage.from("uploads").download(key);
+    if (error || !data) return new Response("couldn't read the model", { status: 502 });
+    return new Response(data, { headers: { "content-type": "application/octet-stream", "cache-control": "private, max-age=300" } });
+  }
   if (!process.env.BLOB_READ_WRITE_TOKEN) return new Response("online storage isn't set up", { status: 503 });
-  const path = new URL(request.url).searchParams.get("path") ?? "";
   if (!path.startsWith("playform/models/")) return new Response("not found", { status: 404 });
   for (const access of ["private", "public"] as const) {
     try {

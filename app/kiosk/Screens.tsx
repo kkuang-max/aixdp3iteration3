@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
+import { SAMPLE_GESTURE_TEXT, SAMPLE_PART_NAMES, type GestureText } from "@/lib/gestureText";
+import type { HoldState } from "./Kiosk";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { matchPart, type PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
@@ -58,10 +60,18 @@ const BadgeIcon = ({ size = 44 }: { size?: number }) => (
 export const DemoContext = createContext<PublishedDemo | null>(null);
 /** The published model file, once loaded, for the live 3D view. */
 export const ModelFileContext = createContext<{ name: string; data: ArrayBuffer } | null>(null);
-const useProductName = () => useContext(DemoContext)?.productName.toUpperCase() || PRODUCT.name;
+/** The product's name: what the portal filled in (maybe nothing yet), or the built-in sample's when nothing was published. */
+const useProductName = () => {
+  const demo = useContext(DemoContext);
+  return demo ? demo.productName.toUpperCase() : PRODUCT.name;
+};
+/** "ORBIT EARBUDS" → "Orbit Earbuds", for names inside a sentence. */
+const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+/** "NAME / REST", or just "REST" while the product has no name. */
+const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null; frozen?: boolean }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
@@ -69,14 +79,14 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
     // Only How it works and Specs light or move parts; other topics show the whole model turning.
     const mapping = props.interactive ? demo.mappings.find((m) => m.sectionId === props.topicId) : undefined;
     // A row the visitor points at / swiped to wins over the topic's mapped part.
-    const part = props.rowPart ?? mapping?.part;
+    const part = props.rowPart ?? null; // only a part the visitor selects changes the look
     const mode = !props.interactive ? "Slow turn" : props.rowPart ? (props.topicId === "how" ? "Explode apart" : "Highlight") : (mapping?.mode ?? "Highlight");
     if (file && failed !== file.data) {
       return (
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} />
+            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} frozen={props.frozen} />
           </div>
         </>
       );
@@ -92,7 +102,17 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
       </>
     );
   }
-  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} />;
+  if (demo) return <NoModel />;
+  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} paused={props.paused} pull={props.pull as PartId | null} />;
+}
+
+/** The portal's demo has no 3D model yet: say so instead of showing the sample earbud. */
+function NoModel() {
+  return (
+    <div className={styles.noModel}>
+      <span>No 3D model uploaded yet</span>
+    </div>
+  );
 }
 
 /** A button a hand can hold over to press: shows a filling bar while the hand dwells. */
@@ -115,6 +135,8 @@ export function Hub(props: {
   onPick: (i: number) => void;
   activeRow: number | null;
   modelPart: string | null; // the part of the model under the pointer
+  /** Holding over the model (stops it turning, pulls the part out) and pinch zoom (0..1) on a part. */
+  hold: HoldState;
   onRow: (i: number) => void;
   explode: number;
   accent: string;
@@ -128,7 +150,11 @@ export function Hub(props: {
   const productName = useProductName();
   const base = TOPICS[props.topic];
   const published = demo?.sections.find((x) => x.id === base.id);
-  const t = published ? { ...base, title: published.title, rows: published.rows.map((r) => ({ a: r.a, b: r.b, part: undefined as PartId | undefined })) } : base;
+  // A demo from the portal shows exactly what was filled in, even if that's nothing; the built-in sample shows only
+  // when nothing has been published.
+  const t = demo
+    ? { ...base, title: published?.title ?? "", rows: (published?.rows ?? []).map((r) => ({ a: r.a, b: r.b, part: undefined as PartId | undefined })) }
+    : base;
   const interactive = PART_TOPICS.has(base.id);
   const active = interactive && props.activeRow !== null ? t.rows[props.activeRow] : undefined;
   // Sample earbud: the row's part. Uploaded model: the part whose name matches the row.
@@ -136,13 +162,22 @@ export function Hub(props: {
   const rowPart = (r: { a: string; part?: PartId }): string | null => (demo?.model ? matchPart(r.a, partNames) : (r.part ?? null));
   // Pointing at a part lights it and every row about it; pointing at (or swiping to) a row lights its part.
   const hoverPart = interactive ? props.modelPart : null;
-  const litPart = hoverPart ?? (active ? rowPart(active) : null);
-  const highlight = !interactive ? NO_PARTS : !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
+  // Zoomed in on a part: that part stays lit; otherwise what's pointed at.
+  const zoomPart = interactive && props.hold.zoomed ? props.hold.zoomPart : null;
+  const litPart = zoomPart ?? hoverPart ?? (active ? rowPart(active) : null);
+  const highlight = interactive && !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : NO_PARTS;
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
+  // Hold and pinch: only parts on How it works / Specs pull out and zoom; elsewhere holding just stops the spin.
+  const pulled = zoomPart ?? (interactive && props.hold.holding ? props.hold.part : null);
+  // A published demo shows only what the business wrote (nothing is made up); before anything is published, the
+  // built-in Orbit Earbuds example.
+  const gestureText: GestureText = demo ? (demo.gestureText ?? { whole: "", parts: {} }) : SAMPLE_GESTURE_TEXT;
+  const zoomText = zoomPart ? gestureText.parts[zoomPart] : undefined;
+  const zoomName = zoomPart ? (demo ? zoomPart : (SAMPLE_PART_NAMES[zoomPart] ?? zoomPart)) : "";
   return (
     <>
       <div className={styles.eyebrow}>
-        {productName} / {PRODUCT.brand} · {PRODUCT.booth}
+        {demo ? productName : `${productName} / ${PRODUCT.brand} · ${PRODUCT.booth}`}
       </div>
       <HandButton className={styles.teamLink} onClick={props.onTeam}>
         <TeamIcon />
@@ -177,13 +212,43 @@ export function Hub(props: {
         })}
       </nav>
 
-      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} />
+      {/* The model: holding over it stops it turning (and on How it works / Specs pulls the pointed part out);
+          pinching zooms in on that part. data-model-zone is the area the kiosk treats as "over the model". */}
+      <div className={styles.modelZone} data-model-zone="" aria-hidden="true" />
+      <div className={styles.modelZoomClip}>
+      <div
+        className={styles.modelZoom}
+        data-zoomed={zoomPart ? "" : undefined}
+        style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: "0 0" }}
+      >
+        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} pull={pulled} frozen={!!zoomPart} />
+      </div>
+      </div>
 
+
+      {zoomPart ? (
+      <section key={`zoom-${zoomPart}`} className={styles.panel} aria-live="polite">
+        <span className={styles.panelKicker}>
+          {t.n} · {t.label}
+        </span>
+        <h1 className={styles.panelTitle}>{zoomName}</h1>
+        <div className={styles.partDetail}>
+          {zoomText?.hover && <span className={styles.partDetailLead}>{zoomText.hover}</span>}
+          {zoomText?.pinch && <p className={styles.partDetailBody}>{zoomText.pinch}</p>}
+          {zoomText?.specs && (
+            <div className={styles.partDetailSpecs}>
+              <span className={styles.partDetailLabel}>SPECS</span>
+              <span>{zoomText.specs}</span>
+            </div>
+          )}
+        </div>
+      </section>
+      ) : (
       <section key={t.id} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>
           {t.n} · {t.label}
         </span>
-        <h1 className={styles.panelTitle}>{t.title}</h1>
+        {t.title ? <h1 className={styles.panelTitle}>{t.title}</h1> : <h1 className={styles.panelTitle} data-empty="">Not filled in yet</h1>}
         <div className={styles.rows}>
           {t.rows.map((r, i) => (
             <div
@@ -199,6 +264,7 @@ export function Hub(props: {
           ))}
         </div>
       </section>
+      )}
 
       <div className={styles.guide}>
         <span key={props.guide.title} className={styles.guideTitle}>
@@ -233,6 +299,9 @@ export function Hub(props: {
 const BADGE_SCAN_MS = 2500; // prototype: the badge "scan" is simulated
 const CONFIRM_S = 10; // confirmation screens go back to the topics after this long
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** A phone number: at least 7 digits, with the usual spaces, dashes, dots, brackets or a leading +. */
+const PHONE_RE = /^\+?[\d\s().-]{7,}$/;
+const isPhone = (v: string) => PHONE_RE.test(v) && v.replace(/\D/g, "").length >= 7;
 
 type SendProps = {
   session: Session;
@@ -257,6 +326,8 @@ function SideModel({ accent }: { accent: string }) {
       {demo?.model ? (
         // eslint-disable-next-line @next/next/no-img-element
         <div className={styles.modelPicture}><img src={demo.model.whole} alt="" /></div>
+      ) : demo ? (
+        <NoModel />
       ) : (
         <Model3D geo={MODEL} accent={accent} explode={1} highlight={[]} />
       )}
@@ -302,12 +373,15 @@ function DetailsForm(props: {
   heading?: string;
   questions?: boolean;
   className?: string;
+  /** Leave contact info: one "mode of contact" field that takes an email address or a phone number. */
+  anyContact?: boolean;
 }) {
   const s = props.session;
   const [emailError, setEmailError] = useState(false);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!EMAIL_RE.test(s.email.trim())) {
+    const v = s.email.trim();
+    if (!(EMAIL_RE.test(v) || (props.anyContact && isPhone(v)))) {
       setEmailError(true);
       return;
     }
@@ -317,12 +391,13 @@ function DetailsForm(props: {
     <form className={`${styles.formCard} ${props.className ?? ""}`} onSubmit={submit} noValidate>
       {props.heading && <span className={styles.formHeading}>{props.heading}</span>}
       <label htmlFor="lead-name" className={styles.leadCardTitle}>TYPE YOUR NAME</label>
-      <input id="lead-name" type="text" placeholder="[Your name]" autoComplete="off" className={styles.input} value={s.name} onChange={(e) => props.onChange({ name: e.target.value })} />
-      <label htmlFor="lead-email" className={styles.leadCardTitle}>TYPE YOUR EMAIL</label>
+      <input id="lead-name" type="text" placeholder={props.anyContact ? "first name, last name" : "[Your name]"} autoComplete="off" className={styles.input} value={s.name} onChange={(e) => props.onChange({ name: e.target.value })} />
+      <label htmlFor="lead-email" className={styles.leadCardTitle}>{props.anyContact ? "MODE OF CONTACT" : "TYPE YOUR EMAIL"}</label>
       <input
         id="lead-email"
-        type="email"
-        placeholder="you@company.com"
+        type={props.anyContact ? "text" : "email"}
+        inputMode={props.anyContact ? "email" : undefined}
+        placeholder={props.anyContact ? "name@example.com or (XXX-XXX-XXXX)" : "you@company.com"}
         autoComplete="off"
         className={styles.input}
         aria-invalid={emailError || undefined}
@@ -333,7 +408,7 @@ function DetailsForm(props: {
         }}
       />
       <label htmlFor="lead-company" className={styles.inputLabel}>COMPANY (OPTIONAL)</label>
-      <input id="lead-company" type="text" placeholder="[Company]" autoComplete="off" className={`${styles.input} ${styles.inputSmall}`} value={s.company} onChange={(e) => props.onChange({ company: e.target.value })} />
+      <input id="lead-company" type="text" placeholder={props.anyContact ? "[company]" : "[Company]"} autoComplete="off" className={`${styles.input} ${styles.inputSmall}`} value={s.company} onChange={(e) => props.onChange({ company: e.target.value })} />
       {props.questions && (
         <>
           <label htmlFor="lead-questions" className={styles.inputLabel}>LET US KNOW IF YOU HAVE ANY SPECIFIC QUESTIONS</label>
@@ -341,14 +416,14 @@ function DetailsForm(props: {
         </>
       )}
       <button type="submit" className={styles.submitBtn}>
-        {emailError ? "CHECK THE EMAIL ADDRESS" : <><SendIcon /> SUBMIT</>}
+        {emailError ? (props.anyContact ? "CHECK THE EMAIL OR PHONE NUMBER" : "CHECK THE EMAIL ADDRESS") : <><SendIcon /> SUBMIT</>}
       </button>
     </form>
   );
 }
 
 /** Confirmation with a ring that counts down, then goes back to the topics. */
-function Confirmation(props: { title: string; body: string; onDone: () => void; accent: string; eyebrow: string }) {
+function Confirmation(props: { title: string; body: string; onDone: () => void; accent: string; eyebrow: string; note?: string }) {
   const [left, setLeft] = useState(CONFIRM_S);
   const done = useRef(props.onDone);
   useEffect(() => {
@@ -382,6 +457,7 @@ function Confirmation(props: { title: string; body: string; onDone: () => void; 
           </svg>
           <span className={styles.countdownText}>Back to Home<br />{left} sec</span>
         </button>
+        {props.note && <span className={styles.confirmNote}>{props.note}</span>}
       </div>
     </>
   );
@@ -394,7 +470,7 @@ export function Team(props: SendProps & { accent: string }) {
   if (done) {
     return (
       <Confirmation
-        eyebrow={`${productName} / ASK OUR TEAM`}
+        eyebrow={named(productName, "ASK OUR TEAM")}
         title="YOUR SPOT IS SAVED"
         body="Feel free to keep looking around. You have been emailed a ticket number and wait time to return."
         onDone={props.onBack}
@@ -408,7 +484,7 @@ export function Team(props: SendProps & { accent: string }) {
   };
   return (
     <>
-      <div className={styles.eyebrow}>{productName} / ASK OUR TEAM</div>
+      <div className={styles.eyebrow}>{named(productName, "ASK OUR TEAM")}</div>
       <BackLink onBack={props.onBack} />
       <SideModel accent={props.accent} />
       <div className={styles.sendColumn}>
@@ -429,7 +505,7 @@ export function Brochure(props: SendProps & { accent: string }) {
     const to = done === "email" ? props.session.email : "the email on your badge";
     return (
       <Confirmation
-        eyebrow={`${productName} / DIGITAL BROCHURE`}
+        eyebrow={named(productName, "DIGITAL BROCHURE")}
         title="THE BROCHURE IS ON ITS WAY"
         body={`We’ll send it to ${to}, with the topics you explored.`}
         onDone={props.onBack}
@@ -443,7 +519,7 @@ export function Brochure(props: SendProps & { accent: string }) {
   };
   return (
     <>
-      <div className={styles.eyebrow}>{productName} / DIGITAL BROCHURE</div>
+      <div className={styles.eyebrow}>{named(productName, "DIGITAL BROCHURE")}</div>
       <BackLink onBack={props.onBack} />
       <button type="button" className={styles.qrCard} data-dwell={DWELL_BUTTON_MS} data-selected={phone ? "" : undefined} onClick={() => { setPhone(true); props.onSent("phone", "brochure"); }}>
         <span className={styles.qr}>[QR]</span>
@@ -465,6 +541,7 @@ export function Brochure(props: SendProps & { accent: string }) {
 // ---- Leave contact info for later -----------------------------------------------------
 export function Contact(props: SendProps & { accent: string; onBrochure: () => void }) {
   const productName = useProductName();
+  const demo = useContext(DemoContext);
   const [done, setDone] = useState(false);
   const [scanning, setScanning] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -472,9 +549,10 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
   if (done) {
     return (
       <Confirmation
-        eyebrow={`${productName} / LEAVE CONTACT INFO`}
+        eyebrow={named(productName, "LEAVE CONTACT INFO")}
         title="THANKS, WE’LL BE IN TOUCH"
-        body="Someone from our team will reach out to you soon."
+        body={`Your details have been sent to the ${productName ? `${titleCase(productName)} team` : "team"}. They’ll be in touch about your inquiry.`}
+        note={`Your contact information will be deleted after ${demo?.retentionDays ? `${demo.retentionDays} day${demo.retentionDays === 1 ? "" : "s"}` : "[X days]"}.`}
         onDone={props.onBack}
         accent={props.accent}
       />
@@ -491,12 +569,12 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
   };
   return (
     <>
-      <div className={styles.eyebrow}>{productName} / LEAVE CONTACT INFO</div>
+      <div className={styles.eyebrow}>{named(productName, "LEAVE CONTACT INFO")}</div>
       <BackLink onBack={props.onBack} />
       <div className={styles.contactIntro}>
-        <span className={styles.contactTitle}>LET US CONTACT YOU</span>
+        <span className={styles.contactTitle}>CONNECT WITH OUR TEAM</span>
         <span className={styles.contactBody}>
-          {scanning ? "Looking for your badge… hold it still in front of the camera." : "Scan your badge or enter your contact info so we can reach out to you."}
+          {scanning ? "Looking for your badge… hold it still in front of the camera." : "Share your contact information, and a team member will follow up with you. Simply scan your badge or enter your information."}
         </span>
         <div className={styles.contactButtons}>
           <HandButton className={styles.pillBtn} onClick={scan}>
@@ -514,6 +592,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
         onChange={props.onChange}
         onSubmit={() => sent("email")}
         heading="NO BADGE? TYPE IT IN"
+        anyContact
         questions
         className={styles.contactForm}
       />

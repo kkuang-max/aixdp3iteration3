@@ -3,6 +3,7 @@
 // BLOB_READ_WRITE_TOKEN. Without it the portal and kiosk fall back to this browser's own copy.
 
 import { BlobError, get, put } from "@vercel/blob";
+import { adminClient, boothBusiness } from "@/lib/supabaseServer";
 
 const PATH = "playform/published-demo.json";
 const MAX_BYTES = 4_000_000;
@@ -26,7 +27,20 @@ async function read() {
   return null;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // A kiosk at a business's booth (/?booth=<id>): that business's published demo, from Supabase.
+  const booth = new URL(request.url).searchParams.get("booth");
+  if (booth) {
+    const owner = await boothBusiness(booth);
+    if (!owner) return Response.json({ error: "unknown booth" }, { status: 404 });
+    const db = adminClient();
+    const [{ data: demo }, { data: biz }] = await Promise.all([
+      db.from("demos").select("published").eq("business_id", owner.business).maybeSingle(),
+      db.from("businesses").select("lead_retention_days").eq("id", owner.business).maybeSingle(),
+    ]);
+    if (!demo?.published) return Response.json({ error: "nothing published yet" }, { status: 404, headers: { "cache-control": "no-store" } });
+    return Response.json({ ...demo.published, retentionDays: biz?.lead_retention_days ?? 30, booth: owner.booth }, { headers: { "cache-control": "no-store" } });
+  }
   if (!configured()) return notConfigured();
   try {
     const result = await read();

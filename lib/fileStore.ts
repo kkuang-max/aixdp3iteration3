@@ -4,7 +4,7 @@
 const DB = "playform";
 const STORE = "files";
 /** "publishedModel" is the model file the kiosk shows (a copy, so editing in the portal doesn't change the kiosk). */
-export type FileKey = "model" | "doc" | "publishedModel";
+export type FileKey = "model" | "doc" | "publishedModel" | `section-${string}`; // section-<id>: a manual section's attached file
 export type StoredFile = { name: string; type: string; data: ArrayBuffer };
 
 function open(): Promise<IDBDatabase> {
