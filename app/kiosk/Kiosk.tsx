@@ -27,6 +27,7 @@ const PRESENT_MS = 8000; // no hand and no touch/mouse for this long → nobody 
 const ATTRACT_CYCLE_MS = 5000; // nobody here: flip through the topics like a pamphlet on a stand
 const RESET_MS = 45000; // nobody here this long → clear the visitor's session, back to the start
 const RESET_STAFF_MS = 180000; // they were told to look around while staff come over, so wait longer
+const ZOOM_ABANDON_MS = 180000; // zoomed in and nobody seen this long: they walked away mid-zoom, start over
 const HAND_GRACE_MS = 250; // keep a dwell going through brief tracking misses
 const HAND_MARGIN = 0.12; // ignore the outer edge of the camera frame
 const SMOOTHING = 0.45;
@@ -721,7 +722,11 @@ export default function Kiosk() {
       }
 
       const idle = now - s.lastActive;
-      if (s.present) {
+      // Zoomed in on a part: it stays until the visitor pinches in, even with no hand or finger in view, so they still
+      // count as here (no attract loop, no reset) unless nobody has been seen for a long while.
+      if (s.zoomed && idle < ZOOM_ABANDON_MS) {
+        s.lastCycle = now;
+      } else if (s.present) {
         if (s.screen === "hub") {
           const id = TOPICS[s.topic].id;
           session.current.time[id] = (session.current.time[id] ?? 0) + dt;
@@ -736,7 +741,7 @@ export default function Kiosk() {
         s.lastCycle = now;
         pickTopic(s.topic + 1, false);
       }
-      if (session.current.start && !s.present && idle > (s.screen === "staff" ? RESET_STAFF_MS : RESET_MS)) {
+      if (session.current.start && !s.present && !(s.zoomed && idle < ZOOM_ABANDON_MS) && idle > (s.screen === "staff" ? RESET_STAFF_MS : RESET_MS)) {
         s.lastCycle = now;
         resetVisitor();
       }
