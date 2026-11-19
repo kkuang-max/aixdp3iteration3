@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
+import { SAMPLE_GESTURE_TEXT, SAMPLE_PART_NAMES, type GestureText } from "@/lib/gestureText";
+import type { HoldState } from "./Kiosk";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { matchPart, type PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
@@ -69,7 +71,7 @@ const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.t
 const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
@@ -84,7 +86,7 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} />
+            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} />
           </div>
         </>
       );
@@ -101,7 +103,7 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
     );
   }
   if (demo) return <NoModel />;
-  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} />;
+  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} paused={props.paused} pull={props.pull as PartId | null} />;
 }
 
 /** The portal's demo has no 3D model yet: say so instead of showing the sample earbud. */
@@ -133,6 +135,8 @@ export function Hub(props: {
   onPick: (i: number) => void;
   activeRow: number | null;
   modelPart: string | null; // the part of the model under the pointer
+  /** Holding over the model (stops it turning, pulls the part out) and pinch zoom (0..1) on a part. */
+  hold: HoldState;
   onRow: (i: number) => void;
   explode: number;
   accent: string;
@@ -158,9 +162,19 @@ export function Hub(props: {
   const rowPart = (r: { a: string; part?: PartId }): string | null => (demo?.model ? matchPart(r.a, partNames) : (r.part ?? null));
   // Pointing at a part lights it and every row about it; pointing at (or swiping to) a row lights its part.
   const hoverPart = interactive ? props.modelPart : null;
-  const litPart = hoverPart ?? (active ? rowPart(active) : null);
+  // Zoomed in on a part: that part stays lit; otherwise what's pointed at.
+  const zoomPart = interactive && props.hold.zoomed ? props.hold.zoomPart : null;
+  const litPart = zoomPart ?? hoverPart ?? (active ? rowPart(active) : null);
   const highlight = !interactive ? NO_PARTS : !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
+  // Hold and pinch: only parts on How it works / Specs pull out and zoom; elsewhere holding just stops the spin.
+  // (A zoomed part stays where it was when the zoom was aimed, so the zoom centres on it.)
+  const pulled = zoomPart ? null : interactive && props.hold.holding ? props.hold.part : null;
+  // A published demo shows only what the business wrote (nothing is made up); before anything is published, the
+  // built-in Orbit Earbuds example.
+  const gestureText: GestureText = demo ? (demo.gestureText ?? { whole: "", parts: {} }) : SAMPLE_GESTURE_TEXT;
+  const zoomText = zoomPart ? gestureText.parts[zoomPart] : undefined;
+  const zoomName = zoomPart ? (demo ? zoomPart : (SAMPLE_PART_NAMES[zoomPart] ?? zoomPart)) : "";
   return (
     <>
       <div className={styles.eyebrow}>
@@ -199,8 +213,38 @@ export function Hub(props: {
         })}
       </nav>
 
-      <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} />
+      {/* The model: holding over it stops it turning (and on How it works / Specs pulls the pointed part out);
+          pinching zooms in on that part. data-model-zone is the area the kiosk treats as "over the model". */}
+      <div className={styles.modelZone} data-model-zone="" aria-hidden="true" />
+      <div className={styles.modelZoomClip}>
+      <div
+        className={styles.modelZoom}
+        data-zoomed={zoomPart ? "" : undefined}
+        style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: props.hold.origin }}
+      >
+        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding} pull={pulled} />
+      </div>
+      </div>
 
+
+      {zoomPart ? (
+      <section key={`zoom-${zoomPart}`} className={styles.panel} aria-live="polite">
+        <span className={styles.panelKicker}>
+          {t.n} · {t.label}
+        </span>
+        <h1 className={styles.panelTitle}>{zoomName}</h1>
+        <div className={styles.partDetail}>
+          {zoomText?.hover && <span className={styles.partDetailLead}>{zoomText.hover}</span>}
+          {zoomText?.pinch && <p className={styles.partDetailBody}>{zoomText.pinch}</p>}
+          {zoomText?.specs && (
+            <div className={styles.partDetailSpecs}>
+              <span className={styles.partDetailLabel}>SPECS</span>
+              <span>{zoomText.specs}</span>
+            </div>
+          )}
+        </div>
+      </section>
+      ) : (
       <section key={t.id} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>
           {t.n} · {t.label}
@@ -221,6 +265,7 @@ export function Hub(props: {
           ))}
         </div>
       </section>
+      )}
 
       <div className={styles.guide}>
         <span key={props.guide.title} className={styles.guideTitle}>

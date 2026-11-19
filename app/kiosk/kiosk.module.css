@@ -1183,3 +1183,77 @@ video.camVideo {
   color: #9aa0b3;
 }
 
+/* ---- Hold and pinch on the model ---- */
+.model[data-paused] {
+  animation-play-state: paused;
+}
+
+/* The area the kiosk treats as "over the model" (hit-tested by position, so it never blocks the parts). */
+.modelZone {
+  position: absolute;
+  left: 400px;
+  top: 70px;
+  width: 460px;
+  height: 495px;
+  pointer-events: none;
+}
+
+.modelZoom {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform 160ms ease-out;
+}
+
+/* Zoomed in on a part: the right-hand panel shows just that part. */
+.modelZoom {
+  transition: transform 350ms ease-out;
+}
+
+.partDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.partDetailLead {
+  font-size: 19px;
+  font-weight: 600;
+  color: #c8d8ff;
+}
+
+.partDetailBody {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+  color: #eef1f8;
+}
+
+.partDetailSpecs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 16px;
+  color: #c9cfdd;
+}
+
+.partDetailLabel {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: #aeb4c6;
+}
+
+/* Zoomed in: only the model area shows the model, so other parts don't slide over the topics or the text. */
+.modelZoomClip {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.modelZoomClip:has(> .modelZoom[data-zoomed]) {
+  -webkit-mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
+  mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
+}
+

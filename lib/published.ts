@@ -3,6 +3,7 @@
 // on the server via /api/kiosk-config so a kiosk on another device picks it up.
 
 import { loadFile, saveFile } from "./fileStore";
+import type { GestureText } from "./gestureText";
 
 export type PublishedSection = { id: string; title: string; rows: { a: string; b: string }[] };
 export type PublishedMapping = { gesture: string; sectionId: string; part: string; mode: string };
@@ -14,6 +15,8 @@ export type PublishedDemo = {
   productName: string;
   sections: PublishedSection[];
   mappings: PublishedMapping[];
+  /** What hold (hover) and pinch show on the model, per part. Older demos don't have it. */
+  gestureText?: GestureText;
   /** An uploaded 3D model, as pictures: the whole model and each mapped part lit up in it. */
   model?: {
     fileName: string;
