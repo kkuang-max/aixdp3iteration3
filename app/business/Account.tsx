@@ -4,7 +4,7 @@
 // booths, sets how long leads are kept, and sees the leads and visits its kiosks recorded. Row-level security in the
 // database means everything here is only ever the signed-in business's own data.
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
 import { TOPICS } from "@/lib/product";
 import { supabase, supabaseEnabled } from "@/lib/supabase";
@@ -25,6 +25,49 @@ export function useAccount(): { user: User | null; ready: boolean } {
     return () => data.subscription.unsubscribe();
   }, []);
   return { user, ready };
+}
+
+// ---- Account menu (top right): Open kiosk, Booths & leads, Sign out ---------------------------------------------------
+export const KioskIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+);
+
+export function AccountMenu({ email, current, onKiosk, onBooths, onSignOut }: { email: string; current: boolean; onKiosk: () => void; onBooths: () => void; onSignOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("pointerdown", away);
+    window.addEventListener("keydown", esc);
+    return () => { window.removeEventListener("pointerdown", away); window.removeEventListener("keydown", esc); };
+  }, [open]);
+  const pick = (fn: () => void) => () => { setOpen(false); fn(); };
+  return (
+    <div ref={ref} className={styles.accountMenu}>
+      <button type="button" className={styles.accountBtn} aria-haspopup="menu" aria-expanded={open} data-current={current ? "" : undefined} onClick={() => setOpen((v) => !v)} title={email}>
+        <span className={styles.avatar} aria-hidden="true">{(email[0] ?? "?").toUpperCase()}</span>
+        ACCOUNT
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+      </button>
+      {open && (
+        <div className={styles.menu} role="menu">
+          <span className={styles.menuEmail}>{email}</span>
+          <button type="button" role="menuitem" onClick={pick(onKiosk)}><KioskIcon /> Open kiosk</button>
+          <button type="button" role="menuitem" onClick={pick(onBooths)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 21V9l8-6 8 6v12" /><path d="M9 21v-6h6v6" /></svg>
+            Booths &amp; leads
+          </button>
+          <span className={styles.menuRule} />
+          <button type="button" role="menuitem" onClick={pick(onSignOut)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---- Sign in / create an account ----------------------------------------------------------------------------------
@@ -174,29 +217,33 @@ export function BoothsAndLeads({ user, onBack, onNotice }: { user: User; onBack:
         <p>{business ? `${business} · ` : ""}{user.email}</p>
       </div>
       <div className={`${styles.card} ${styles.boothCard}`}>
-        <div className={styles.fieldLabel}>YOUR BOOTHS</div>
-        <p className={styles.mutedSmall}>Open a booth&apos;s link on the kiosk at that booth. It shows what you published, and its leads and visits come here.</p>
+        <div className={styles.boothHead}>
+          <span className={styles.fieldLabel}>YOUR BOOTHS</span>
+          <button type="button" className={styles.smallPill} onClick={addBooth}>+ NEW BOOTH</button>
+        </div>
+        <p className={styles.boothHint}>Open a booth&apos;s link on the kiosk at that booth. It shows what you published; its leads and visits come here.</p>
         <div className={styles.boothList}>
           {booths.map((b) => (
             <div key={b.id} className={styles.boothRow}>
-              <span className={styles.boothName}>{b.name}</span>
-              <span className={styles.boothLink} title={link(b)}>/?booth={b.id}</span>
-              <button type="button" className={styles.smallPill} onClick={() => copy(b)}>COPY</button>
-              <a className={styles.smallPill} href={link(b)} target="_blank" rel="noopener noreferrer">OPEN</a>
-              <button type="button" className={styles.remove} aria-label={`Delete ${b.name}`} onClick={() => removeBooth(b)}>×</button>
+              <span className={styles.boothText}>
+                <b>{b.name}</b>
+                <span className={styles.boothLink} title={link(b)}>/?booth={b.id}</span>
+              </span>
+              <span className={styles.boothActions}>
+                <button type="button" className={styles.smallPill} onClick={() => copy(b)}>COPY LINK</button>
+                <a className={styles.smallPill} href={link(b)} target="_blank" rel="noopener noreferrer">OPEN</a>
+                <button type="button" className={styles.remove} aria-label={`Delete ${b.name}`} onClick={() => removeBooth(b)}>×</button>
+              </span>
             </div>
           ))}
           {!loading && booths.length === 0 && <p className={styles.emptyNote}>No booths yet. Add one for each kiosk.</p>}
         </div>
-        <button type="button" className={styles.dashedBtn} onClick={addBooth}>+ NEW BOOTH</button>
         <div className={styles.retention}>
-          <label htmlFor="retention" className={styles.fieldLabel}>DELETE LEADS AFTER</label>
-          <span>
-            <input id="retention" type="number" min={1} max={365} className={`${styles.field} ${styles.retentionInput}`} value={retention} onChange={(e) => setRetention(Number(e.target.value))} onBlur={(e) => saveRetention(Number(e.target.value))} /> days
-          </span>
-          <p className={styles.mutedSmall}>Visitors are told this when they leave their details.</p>
+          <label htmlFor="retention">Delete leads after</label>
+          <input id="retention" type="number" min={1} max={365} className={`${styles.field} ${styles.retentionInput}`} value={retention} onChange={(e) => setRetention(Number(e.target.value))} onBlur={(e) => saveRetention(Number(e.target.value))} />
+          <span>days</span>
+          <p className={styles.boothHint}>Visitors are told this when they leave their details.</p>
         </div>
-        <button type="button" className={styles.textLink} onClick={() => sb.auth.signOut()}>Sign out</button>
       </div>
       <div className={`${styles.card} ${styles.leadsCard}`}>
         <div className={styles.statsRow}>

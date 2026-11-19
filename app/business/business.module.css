@@ -2039,9 +2039,8 @@
   letter-spacing: 0.16em;
 }
 
-.accountBtn[aria-current] {
-  background: #c8d8ff;
-  color: #1b2036 !important;
+.accountBtn[data-current] {
+  border-color: #c8d8ff;
 }
 
 .authCard {
@@ -2080,23 +2079,8 @@
   color: #aeb4c6;
 }
 
-.boothCard {
-  position: absolute;
-  left: 80px;
-  top: 168px;
-  width: 440px;
-  height: 434px;
-  padding: 22px 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-}
 
-.boothCard > .mutedSmall {
-  margin: 0;
-  line-height: 1.4;
-}
+
 
 .boothList {
   align-self: stretch;
@@ -2108,17 +2092,7 @@
   gap: 8px;
 }
 
-.boothRow {
-  display: grid;
-  grid-template-columns: 70px minmax(0, 1fr) auto auto 28px;
-  gap: 8px;
-  align-items: center;
-  font-size: 14px;
-}
 
-.boothName {
-  font-weight: 600;
-}
 
 .boothLink {
   overflow: hidden;
@@ -2135,21 +2109,9 @@
   text-decoration: none;
 }
 
-.retention {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 14px;
-}
 
-.retention .mutedSmall {
-  margin: 0;
-}
 
-.retentionInput {
-  width: 72px;
-  margin-right: 6px;
-}
+
 
 .leadsCard {
   position: absolute;
@@ -2228,30 +2190,161 @@
 }
 
 /* Open kiosk: left of Booths & leads when signed in, else left of Restart. */
-.kioskBtn {
+
+
+.accountBtn:hover {
+  border-color: #eef1f8;
+}
+
+/* Account menu (top right, left of Restart) */
+.accountMenu {
   position: absolute;
   right: 377px;
   top: 14px;
-  z-index: 3;
-  height: 30px;
-  padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 999px;
-  background: rgba(12, 15, 28, 0.5);
+  z-index: 25;
+}
+
+.accountMenu .accountBtn,
+.accountBtn {
+  position: static;
+}
+
+.stage > .accountBtn {
+  position: absolute;
+  right: 377px;
+  top: 14px;
+}
+
+.avatar {
+  width: 20px;
+  height: 20px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: #c8d8ff;
+  color: #1b2036;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: 38px;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: #1f2640;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu button {
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 11px !important;
-  font-weight: 600;
-  letter-spacing: 0.16em;
+  gap: 10px;
+  text-align: left;
+  font-size: 14px !important;
 }
 
-.kioskBtn[data-signed-in] {
-  right: 541px;
+.menu button:hover,
+.menu button:focus-visible {
+  background: rgba(200, 216, 255, 0.12);
+  outline: none;
 }
 
-.kioskBtn:hover,
-.accountBtn:hover {
-  border-color: #eef1f8;
+.menuEmail {
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  color: #aeb4c6;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.menuRule {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Booths & leads: booth list */
+.boothCard {
+  position: absolute;
+  left: 80px;
+  top: 168px;
+  width: 440px;
+  height: 434px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.boothHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.boothHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #aeb4c6;
+}
+
+.boothRow {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.boothText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 15px;
+}
+
+.boothActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.retention {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.retention .boothHint {
+  flex-basis: 100%;
+}
+
+.retentionInput {
+  width: 64px;
+  height: 36px;
+  text-align: center;
 }
 

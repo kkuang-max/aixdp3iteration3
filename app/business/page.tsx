@@ -8,7 +8,7 @@ import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
 import { EMPTY_PART_TEXT, type PartText } from "@/lib/gestureText";
 import { MAX_ROWS, publishDemo, publishModelFile, savePreviewDemo, shrinkImage, type PublishedDemo } from "@/lib/published";
 import { authHeader, supabase, supabaseEnabled, UPLOADS } from "@/lib/supabase";
-import { BoothsAndLeads, SignIn, useAccount } from "./Account";
+import { AccountMenu, BoothsAndLeads, KioskIcon, SignIn, useAccount } from "./Account";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -1156,18 +1156,19 @@ export default function BusinessPage() {
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
         <div className={styles.eyebrow}>{config.productName ? `${config.productName.toUpperCase()} / ` : ""}SET UP YOUR DEMO</div>
-        {!gate && (
-          <button type="button" className={styles.kioskBtn} data-signed-in={user ? "" : undefined} onClick={openKiosk} title={user ? "Open your booth's kiosk (shows what you published)" : "Open the kiosk (shows what you published)"}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
-            OPEN KIOSK
+        {!gate && (user ? (
+          <AccountMenu
+            email={user.email ?? ""}
+            current={screen.name === "account"}
+            onKiosk={openKiosk}
+            onBooths={() => go({ name: "account" })}
+            onSignOut={() => supabase().auth.signOut()}
+          />
+        ) : (
+          <button type="button" className={styles.accountBtn} onClick={openKiosk} title="Open the kiosk (shows what you published)">
+            <KioskIcon /> OPEN KIOSK
           </button>
-        )}
-        {!gate && user && (
-          <button type="button" className={styles.accountBtn} aria-current={screen.name === "account" ? "page" : undefined} onClick={() => go({ name: "account" })} title={user.email ?? undefined}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-            BOOTHS &amp; LEADS
-          </button>
-        )}
+        ))}
         {!gate && (<>
         <button type="button" className={styles.restartBtn} onClick={() => setConfirmRestart(true)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>

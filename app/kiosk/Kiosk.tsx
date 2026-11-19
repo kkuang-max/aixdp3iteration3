@@ -40,16 +40,16 @@ const HOLD_GRACE_MS = 450; // keep holding through brief slips off the model
 // Pinch: thumb–index spread, in hand sizes (wrist to middle knuckle). Opening by this much within PINCH_WINDOW_MS zooms
 // in; closing by this much zooms back out. Zoom stays on until then.
 const PINCH_OPEN = 0.45;
-const PINCH_CLOSE = 0.4;
+const PINCH_CLOSE = 0.3;
 const PINCH_WINDOW_MS = 900;
 const PINCH_QUIET_MS = 700; // after a zoom in / out, ignore the hand settling
 // A pinch only counts from a hand that is held fairly still, in view and facing the camera. A hand being lowered or
 // taken away also brings the fingers together, so zooming out also needs the fingers to stay closed for a moment.
-const PINCH_MAX_SPEED = 0.8; // palm speed (camera frames per second) above which the hand is moving, not pinching
+const PINCH_MAX_SPEED = 1.1; // palm speed (camera frames per second) above which the hand is moving, not pinching
 const PINCH_MAX_TURN = 1.3; // hand size changing by more than this within the window: turning or moving away
 const PINCH_OPEN_AT = 0.75; // fingers clearly apart (in hand sizes) to count as spread
-const PINCH_SHUT_AT = 0.4; // fingers together (in hand sizes) to count as pinched in
-const PINCH_HOLD_MS = 350; // ...and kept together this long, with the hand still in view
+const PINCH_SHUT_AT = 0.55; // fingers together (in hand sizes) to count as pinched in
+const PINCH_HOLD_MS = 180; // ...and kept together this long, with the hand still in view
 const WHEEL_STEP = 60; // accumulated wheel / trackpad-pinch delta for one zoom in / out
 const TOUCH_IN = 1.25; // two-finger distance ratio that zooms in on a touchscreen
 const TOUCH_OUT = 0.8;
