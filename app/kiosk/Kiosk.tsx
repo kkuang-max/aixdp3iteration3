@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PART_TOPICS, TOPICS } from "@/lib/product";
-import { newSession, saveLead, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
+import { newSession, saveLead, saveVisit, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
 import { Brochure, Contact, DemoContext, Hub, ModelFileContext, Team } from "./Screens";
 import { liveNearest, livePickers } from "./LiveModel";
-import { loadPreviewDemo, loadPublishedDemo, loadPublishedModelFile, watchPreview, type PublishedDemo } from "@/lib/published";
+import { kioskBooth, loadPreviewDemo, loadPublishedDemo, loadPublishedModelFile, watchPreview, type PublishedDemo } from "@/lib/published";
 
 /** A preview whose draft hasn't loaded yet: shows nothing rather than the built-in sample. */
 const EMPTY_PREVIEW: PublishedDemo = { version: 1, preview: true, publishedAt: "", productName: "", sections: [], mappings: [] };
@@ -116,6 +116,13 @@ export default function Kiosk() {
     demoRef.current = demo;
   }, [demo]);
   const [modelFile, setModelFile] = useState<{ key: string; name: string; data: ArrayBuffer } | null>(null);
+
+  // A kiosk closed or reloaded mid-visit still records the visit.
+  useEffect(() => {
+    const bye = () => { if (!demoRef.current?.preview) saveVisit(session.current, demoRef.current?.booth ?? kioskBooth()); };
+    window.addEventListener("pagehide", bye);
+    return () => window.removeEventListener("pagehide", bye);
+  }, []);
 
   // Show what the business portal published; check for a newer version every minute.
   // With ?preview=1 ("Try it" in the portal) show the portal's current draft instead, and reload it whenever the
@@ -256,6 +263,8 @@ export default function Kiosk() {
   );
 
   const resetVisitor = useCallback(() => {
+    // The visitor is done: a booth's kiosk records what they did (not in a Try it preview).
+    if (!demoRef.current?.preview) saveVisit(session.current, demoRef.current?.booth ?? kioskBooth());
     session.current = newSession();
     Object.assign(ix.current, { zoomed: false, zoomPart: null, holding: false, zoneSince: 0 });
     setHold(NO_HOLD);
@@ -277,7 +286,7 @@ export default function Kiosk() {
     (method: LeadMethod, kind: LeadKind) => {
       if (kind === "brochure") session.current.sent = method;
       else session.current.contacted = true;
-      saveLead(session.current, method, kind);
+      saveLead(session.current, method, kind, demoRef.current?.preview ? null : (demoRef.current?.booth ?? kioskBooth()));
       bump();
     },
     [bump],
@@ -338,6 +347,7 @@ export default function Kiosk() {
     s.zoomScale = Math.min(Math.max(220 / Math.max(size, 1), 1.5), 3);
     s.zoomed = true;
     s.zoomPart = near.part;
+    if (!session.current.zoomed.includes(near.part)) session.current.zoomed.push(near.part);
     pushHold();
     return true;
   }, [pushHold]);

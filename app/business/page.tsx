@@ -7,6 +7,8 @@ import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } 
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
 import { EMPTY_PART_TEXT, type PartText } from "@/lib/gestureText";
 import { MAX_ROWS, publishDemo, publishModelFile, savePreviewDemo, shrinkImage, type PublishedDemo } from "@/lib/published";
+import { authHeader, supabase, supabaseEnabled, UPLOADS } from "@/lib/supabase";
+import { BoothsAndLeads, SignIn, useAccount } from "./Account";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -46,7 +48,8 @@ type Screen =
   | { name: "a-edit"; id: string }
   | { name: "m-model" }
   | { name: "m-section"; index: number }
-  | { name: "i-list" };
+  | { name: "i-list" }
+  | { name: "account" };
 
 const STAGE_W = 1280;
 const STAGE_H = 720;
@@ -376,6 +379,28 @@ export default function BusinessPage() {
   const [cellLayer, setCellLayer] = useState<HTMLDivElement | null>(null); // where open text cells are drawn
   const [sectionDocs, setSectionDocs] = useState<Record<string, File>>({}); // manual: the file attached to each section
   const [formatting, setFormatting] = useState<string | null>(null); // manual: section the AI is formatting
+  // Signed-in business (Supabase): the draft and uploaded files follow the account, not just this browser.
+  const { user, ready } = useAccount();
+  const userId = user?.id ?? null;
+  const cloudTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const cloudSave = (next: BusinessConfig) => {
+    if (!userId) return;
+    clearTimeout(cloudTimer.current);
+    cloudTimer.current = setTimeout(() => {
+      supabase().from("demos").upsert({ business_id: userId, draft: next, updated_at: new Date().toISOString() }).then(({ error }) => {
+        if (error) setNotice("Couldn't save to your account. Changes are kept in this browser.");
+      });
+    }, 800);
+  };
+  const safeName = (n: string) => n.replace(/[^\w.-]+/g, "_");
+  const uploadToAccount = async (kind: "doc" | "model", file: { name: string; type: string; data: ArrayBuffer }) => {
+    if (!userId) return;
+    const store = supabase().storage.from(UPLOADS);
+    const { data: old } = await store.list(`${userId}/${kind}`);
+    if (old?.length) await store.remove(old.map((o) => `${userId}/${kind}/${o.name}`));
+    const { error } = await store.upload(`${userId}/${kind}/${safeName(file.name)}`, new Blob([file.data], { type: file.type || "application/octet-stream" }), { upsert: true });
+    if (error) setNotice(`Couldn't save ${file.name} to your account: ${error.message}`);
+  };
 
   // Uploaded files live in this browser (IndexedDB): bring them back after a refresh.
   useEffect(() => {
@@ -416,6 +441,65 @@ export default function BusinessPage() {
     } catch { /* start fresh when storage is unavailable */ }
   }, []);
 
+  // Signed in: the account's draft wins (a draft started before signing in is kept if the account has none), and its
+  // uploaded files come back on any device. Signing out clears this browser so the next person starts clean.
+  const lastUser = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!ready || lastUser.current === userId) return;
+    const prev = lastUser.current;
+    lastUser.current = userId;
+    if (!userId) {
+      if (prev) {
+        try { localStorage.removeItem(STORAGE_KEY); } catch { /* nothing saved */ }
+        Promise.all([deleteFile("model"), deleteFile("doc"), ...TOPICS.map((t) => deleteFile(`section-${t.id}`))]);
+        setConfig(defaultConfig);
+        setModel(null);
+        setDocFile(null);
+        setSectionDocs({});
+        setScreen({ name: "a-upload" });
+      }
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const sb = supabase();
+      const { data } = await sb.from("demos").select("draft").eq("business_id", userId).maybeSingle();
+      const draft = data?.draft as Partial<BusinessConfig> | null | undefined;
+      let next: BusinessConfig | null = null;
+      if (draft && Array.isArray(draft.sections)) {
+        next = { ...defaultConfig, ...draft, sections: draft.sections.map((x) => ({ ...x, rows: x.rows.slice(0, MAX_ROWS) })) } as BusinessConfig;
+        if (!cancelled) {
+          setConfig(next);
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* fine */ }
+        }
+      } else {
+        // A new account: keep what was filled in before signing in, saved to the account.
+        setConfig((c) => { cloudSave(c); return c; });
+      }
+      // Bring the account's uploaded files into this browser if they aren't here yet.
+      const store = sb.storage.from(UPLOADS);
+      for (const kind of ["doc", "model"] as const) {
+        const { data: files } = await store.list(`${userId}/${kind}`);
+        const f = files?.[0];
+        if (!f || cancelled) continue;
+        const local = await loadFile(kind);
+        if (local && safeName(local.name) === f.name) continue;
+        const { data: blob } = await store.download(`${userId}/${kind}/${f.name}`);
+        if (!blob || cancelled) continue;
+        const name = (kind === "doc" ? next?.documentName : next?.modelName) || f.name;
+        const stored = { name, type: blob.type, data: await blob.arrayBuffer() };
+        await saveFile(kind, stored);
+        if (kind === "doc") setDocFile(new File([stored.data], name, { type: stored.type }));
+        else {
+          setModelBusy(true);
+          try { const loaded = await buildModelParts(name, stored.data); if (!cancelled) setModel(loaded); } catch { /* upload it again */ } finally { setModelBusy(false); }
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the signed-in account changes
+  }, [ready, userId]);
+
   // Fit the 1280×720 artboard to any window.
   useEffect(() => {
     const fit = () => setScale(Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H));
@@ -432,6 +516,7 @@ export default function BusinessPage() {
 
   const save = (next: BusinessConfig) => {
     setConfig(next);
+    cloudSave(next);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { setNotice("Storage unavailable. Changes last until you refresh."); }
   };
   const updateSection = (id: string, fn: (s: Section) => Section) => save({ ...config, sections: config.sections.map((s) => (s.id === id ? fn(s) : s)) });
@@ -449,7 +534,9 @@ export default function BusinessPage() {
     setDocFile(file);
     setAiError("");
     save({ ...config, documentName: file.name });
-    try { await saveFile("doc", { name: file.name, type: file.type, data: await file.arrayBuffer() }); } catch { /* kept until refresh */ }
+    const stored = { name: file.name, type: file.type, data: await file.arrayBuffer() };
+    try { await saveFile("doc", stored); } catch { /* kept until refresh */ }
+    await uploadToAccount("doc", stored);
   };
 
   // 3D model: read in the browser, split into parts, and each gesture re-pointed at the new parts.
@@ -472,6 +559,7 @@ export default function BusinessPage() {
       save({ ...config, modelName: file.name, mappings });
       setNotice(`Found ${names.length} part${names.length === 1 ? "" : "s"} in ${file.name}${loaded.truncated ? " (showing the 24 largest)" : ""}.`);
       try { await saveFile("model", { name: file.name, type: file.type, data }); } catch { /* kept until refresh */ }
+      await uploadToAccount("model", { name: file.name, type: file.type, data });
     } catch (e) {
       setNotice(e instanceof Error && e.message ? `Couldn't read that model: ${e.message}` : "Couldn't read that model.");
     } finally {
@@ -483,6 +571,11 @@ export default function BusinessPage() {
     setPartIndex(0);
     save({ ...config, modelName: "" });
     await deleteFile("model");
+    if (userId) {
+      const store = supabase().storage.from(UPLOADS);
+      const { data } = await store.list(`${userId}/model`);
+      if (data?.length) await store.remove(data.map((o) => `${userId}/model/${o.name}`));
+    }
   };
 
   // Start over: clear every section, gesture and uploaded file.
@@ -490,6 +583,16 @@ export default function BusinessPage() {
     setConfirmRestart(false);
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* nothing saved */ }
     await Promise.all([deleteFile("model"), deleteFile("doc"), ...TOPICS.map((t) => deleteFile(`section-${t.id}`))]);
+    if (userId) {
+      // Clear the account's draft and uploaded files too (what's published stays until the next publish).
+      clearTimeout(cloudTimer.current);
+      await supabase().from("demos").upsert({ business_id: userId, draft: null, updated_at: new Date().toISOString() });
+      const store = supabase().storage.from(UPLOADS);
+      for (const kind of ["doc", "model"]) {
+        const { data } = await store.list(`${userId}/${kind}`);
+        if (data?.length) await store.remove(data.map((o) => `${userId}/${kind}/${o.name}`));
+      }
+    }
     setSectionDocs({});
     setConfig(defaultConfig);
     setModel(null);
@@ -607,7 +710,7 @@ export default function BusinessPage() {
   const go = (s: Screen) => { setEditingPreview(false); setScreen(s); };
   // Publish: the kiosk shows these sections, gestures and model pictures from now on.
   const [publishing, setPublishing] = useState(false);
-  const [published, setPublished] = useState<{ server: boolean; note?: string; at: string } | null>(null);
+  const [published, setPublished] = useState<{ server: boolean; note?: string; at: string; booths?: boolean } | null>(null);
   // What the kiosk shows: exactly the sections, gestures and model filled in here.
   const buildDemo = async (preview: boolean): Promise<PublishedDemo> => {
     let pictures: PublishedDemo["model"];
@@ -617,7 +720,13 @@ export default function BusinessPage() {
       for (const p of model.parts) parts[p.name] = await shrinkImage(p.context, 400);
       pictures = { fileName: model.fileName, whole: await shrinkImage(model.whole), parts, partNames: model.parts.map((p) => p.name) };
       const stored = await loadFile("model");
-      if (stored) pictures.file = preview ? { name: stored.name } : { name: stored.name, path: (await publishModelFile(stored)).path };
+      if (stored) {
+        pictures.file = preview
+          ? { name: stored.name }
+          : userId
+            ? { name: stored.name, path: `sb:${userId}/model/${safeName(stored.name)}` } // already in the account's uploads
+            : { name: stored.name, path: (await publishModelFile(stored)).path };
+      }
     }
     return {
       version: 1,
@@ -639,6 +748,14 @@ export default function BusinessPage() {
     setPublishing(true);
     try {
       const demo = await buildDemo(false);
+      if (userId) {
+        // Signed in: publish to every booth on the account.
+        const res = await fetch("/api/publish", { method: "POST", headers: { "content-type": "application/json", ...(await authHeader()) }, body: JSON.stringify(demo) });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) { setNotice(`Couldn't publish: ${json.error ?? `server error ${res.status}`}.`); return; }
+        setPublished({ server: true, booths: true, at: demo.publishedAt });
+        return;
+      }
       const result = await publishDemo(demo);
       if (!result.local && !result.server) { setNotice("Couldn't publish: storage is blocked in this browser."); return; }
       setPublished({ server: result.server, note: result.serverNote, at: demo.publishedAt });
@@ -1010,6 +1127,13 @@ export default function BusinessPage() {
     );
   }
 
+  if (screen.name === "account" && user) {
+    body = <BoothsAndLeads user={user} onBack={() => go(mode === "auto" ? { name: "a-upload" } : { name: "m-model" })} onNotice={setNotice} />;
+  }
+  // Accounts are on: sign in first (nothing shows until we know who's here).
+  const gate = supabaseEnabled && (!ready || !user);
+  if (gate) body = ready ? <SignIn /> : null;
+
   return (
     <MoreContext.Provider value={setMore}>
     <CellLayer.Provider value={{ layer: cellLayer, scale }}>
@@ -1017,6 +1141,13 @@ export default function BusinessPage() {
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
         <div className={styles.eyebrow}>{config.productName ? `${config.productName.toUpperCase()} / ` : ""}SET UP YOUR DEMO</div>
+        {!gate && user && (
+          <button type="button" className={styles.accountBtn} aria-current={screen.name === "account" ? "page" : undefined} onClick={() => go({ name: "account" })} title={user.email ?? undefined}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+            BOOTHS &amp; LEADS
+          </button>
+        )}
+        {!gate && (<>
         <button type="button" className={styles.restartBtn} onClick={() => setConfirmRestart(true)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
           RESTART
@@ -1025,6 +1156,7 @@ export default function BusinessPage() {
           <button type="button" role="tab" aria-selected={mode === "auto"} onClick={() => switchMode("auto")}>AUTO</button>
           <button type="button" role="tab" aria-selected={mode === "manual"} onClick={() => switchMode("manual")}>MANUAL</button>
         </div>
+        </>)}
         {body}
         <div ref={setCellLayer} className={styles.cellLayer} />
         {notice && <div role="status" className={styles.toast}>{notice}</div>}
@@ -1035,11 +1167,15 @@ export default function BusinessPage() {
             onClose={() => setPublished(null)}
             actions={<>
               <button type="button" className={styles.outlineBtnDim} onClick={() => setPublished(null)}>KEEP EDITING</button>
-              <a className={styles.outlineBtn} href="/" target="_blank" rel="noopener noreferrer">OPEN THE KIOSK <Arrow /></a>
+              {published.booths
+                ? <button type="button" className={styles.outlineBtn} onClick={() => { setPublished(null); go({ name: "account" }); }}>BOOTHS &amp; LEADS <Arrow /></button>
+                : <a className={styles.outlineBtn} href="/" target="_blank" rel="noopener noreferrer">OPEN THE KIOSK <Arrow /></a>}
             </>}
           >
             <p className={styles.modalText}>
-              {published.server
+              {published.booths
+                ? "Every kiosk opened with one of your booth links now shows your sections, gestures and model. Kiosks that are already open pick it up within a minute. Make booth links under Booths & leads."
+                : published.server
                 ? "The kiosk now shows your sections, gestures and model on any device that opens this site. Kiosks that are already open pick it up within a minute."
                 : `Saved in this browser: a kiosk opened in this same browser shows it now. It isn’t online yet, so kiosks on other devices still show the previous demo. Reason: ${published.note}.`}
             </p>

@@ -542,6 +542,7 @@ export function Brochure(props: SendProps & { accent: string }) {
 // ---- Leave contact info for later -----------------------------------------------------
 export function Contact(props: SendProps & { accent: string; onBrochure: () => void }) {
   const productName = useProductName();
+  const demo = useContext(DemoContext);
   const [done, setDone] = useState(false);
   const [scanning, setScanning] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -552,7 +553,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
         eyebrow={named(productName, "LEAVE CONTACT INFO")}
         title="THANKS, WE’LL BE IN TOUCH"
         body={`Your details have been sent to the ${productName ? `${titleCase(productName)} team` : "team"}. They’ll be in touch about your inquiry.`}
-        note="Your contact information will be deleted after [X days]."
+        note={`Your contact information will be deleted after ${demo?.retentionDays ? `${demo.retentionDays} day${demo.retentionDays === 1 ? "" : "s"}` : "[X days]"}.`}
         onDone={props.onBack}
         accent={props.accent}
       />

@@ -2020,3 +2020,210 @@
   background: rgba(200, 216, 255, 0.2);
 }
 
+/* ---- Accounts: sign in, Booths & leads ---- */
+.accountBtn {
+  position: absolute;
+  right: 377px;
+  top: 14px;
+  z-index: 3;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(12, 15, 28, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.accountBtn[aria-current] {
+  background: #c8d8ff;
+  color: #1b2036 !important;
+}
+
+.authCard {
+  position: absolute;
+  left: 80px;
+  top: 168px;
+  width: 440px;
+  padding: 26px 29px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.authCard .submitBtn {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.authError,
+.authInfo,
+.authSwitch {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.authError {
+  color: #f0a3a3;
+}
+
+.authInfo {
+  color: #c8d8ff;
+}
+
+.authSwitch {
+  color: #aeb4c6;
+}
+
+.boothCard {
+  position: absolute;
+  left: 80px;
+  top: 168px;
+  width: 440px;
+  height: 434px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.boothCard > .mutedSmall {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.boothList {
+  align-self: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.boothRow {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto auto 28px;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.boothName {
+  font-weight: 600;
+}
+
+.boothLink {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #c9cfdd;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.boothRow a.smallPill {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.retention {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.retention .mutedSmall {
+  margin: 0;
+}
+
+.retentionInput {
+  width: 72px;
+  margin-right: 6px;
+}
+
+.leadsCard {
+  position: absolute;
+  left: 561px;
+  top: 168px;
+  width: 607px;
+  height: 434px;
+  padding: 20px 22px;
+  background: #1b2036;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.statsRow span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: #aeb4c6;
+}
+
+.statsRow b {
+  font-size: 18px;
+  font-weight: 600;
+  color: #eef1f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leadsHead,
+.leadRow {
+  display: grid;
+  grid-template-columns: 1.3fr 1.3fr 1.2fr 0.9fr 28px;
+  gap: 10px;
+  align-items: center;
+}
+
+.leadsHead {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #aeb4c6;
+}
+
+.leadsList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.leadRow {
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+}
+
+.leadRow small {
+  display: block;
+  font-size: 11px;
+  color: #aeb4c6;
+}
+
