@@ -63,7 +63,7 @@
 /* Auto / manual switch (top right). */
 .modeSwitch {
   position: absolute;
-  right: 72px;
+  right: 215px;
   top: 12px;
   z-index: 3;
   display: flex;
@@ -1667,7 +1667,7 @@
 
 .restartBtn {
   position: absolute;
-  right: 252px;
+  right: 397px;
   top: 14px;
   z-index: 3;
   height: 30px;
@@ -2023,7 +2023,7 @@
 /* ---- Accounts: sign in, Booths & leads ---- */
 .accountBtn {
   position: absolute;
-  right: 377px;
+  right: 72px;
   top: 14px;
   z-index: 3;
   height: 30px;
@@ -2196,10 +2196,10 @@
   border-color: #eef1f8;
 }
 
-/* Account menu (top right, left of Restart) */
+/* Account menu: the far-right button of the top bar (Restart and Auto / Manual sit to its left) */
 .accountMenu {
   position: absolute;
-  right: 377px;
+  right: 72px;
   top: 14px;
   z-index: 25;
 }
@@ -2211,7 +2211,7 @@
 
 .stage > .accountBtn {
   position: absolute;
-  right: 377px;
+  right: 72px;
   top: 14px;
 }
 

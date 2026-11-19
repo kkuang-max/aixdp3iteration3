@@ -71,7 +71,7 @@ const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.t
 const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null; frozen?: boolean }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
@@ -86,7 +86,7 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} />
+            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} frozen={props.frozen} />
           </div>
         </>
       );
@@ -221,7 +221,7 @@ export function Hub(props: {
         data-zoomed={zoomPart ? "" : undefined}
         style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: "0 0" }}
       >
-        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} pull={pulled} />
+        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} pull={pulled} frozen={!!zoomPart} />
       </div>
       </div>
 

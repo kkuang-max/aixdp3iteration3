@@ -40,16 +40,16 @@ const HOLD_GRACE_MS = 450; // keep holding through brief slips off the model
 // Pinch: thumb–index spread, in hand sizes (wrist to middle knuckle). Opening by this much within PINCH_WINDOW_MS zooms
 // in; closing by this much zooms back out. Zoom stays on until then.
 const PINCH_OPEN = 0.45;
-const PINCH_CLOSE = 0.3;
+const PINCH_CLOSE = 0.2;
 const PINCH_WINDOW_MS = 900;
 const PINCH_QUIET_MS = 700; // after a zoom in / out, ignore the hand settling
 // A pinch only counts from a hand that is held fairly still, in view and facing the camera. A hand being lowered or
 // taken away also brings the fingers together, so zooming out also needs the fingers to stay closed for a moment.
-const PINCH_MAX_SPEED = 1.1; // palm speed (camera frames per second) above which the hand is moving, not pinching
-const PINCH_MAX_TURN = 1.3; // hand size changing by more than this within the window: turning or moving away
+const PINCH_MAX_SPEED = 1.5; // palm speed (camera frames per second) above which the hand is moving, not pinching
+const PINCH_MAX_TURN = 1.45; // hand size changing by more than this within the window: turning or moving away
 const PINCH_OPEN_AT = 0.75; // fingers clearly apart (in hand sizes) to count as spread
-const PINCH_SHUT_AT = 0.55; // fingers together (in hand sizes) to count as pinched in
-const PINCH_HOLD_MS = 180; // ...and kept together this long, with the hand still in view
+const PINCH_SHUT_AT = 0.7; // fingers together (in hand sizes) to count as pinched in
+const PINCH_HOLD_MS = 100; // ...and kept together this long, with the hand still in view
 const WHEEL_STEP = 60; // accumulated wheel / trackpad-pinch delta for one zoom in / out
 const TOUCH_IN = 1.25; // two-finger distance ratio that zooms in on a touchscreen
 const TOUCH_OUT = 0.8;
@@ -139,6 +139,9 @@ export default function Kiosk() {
     demoRef.current = demo;
   }, [demo]);
   const [modelFile, setModelFile] = useState<{ key: string; name: string; data: ArrayBuffer } | null>(null);
+  // Loading: nothing shows (no demo earbud) until we know what's published and its model file has arrived.
+  const [demoLoaded, setDemoLoaded] = useState(false);
+  const [modelGaveUp, setModelGaveUp] = useState(""); // file key the kiosk stopped waiting for (failed or too slow)
 
   // A kiosk closed or reloaded mid-visit still records the visit.
   useEffect(() => {
@@ -164,8 +167,10 @@ export default function Kiosk() {
   useEffect(() => {
     let cancelled = false;
     const isPreview = new URLSearchParams(window.location.search).has("preview");
-    const load = () => (isPreview ? loadPreviewDemo() : loadPublishedDemo()).then((d) => {
-      if (!cancelled) setDemo((prev) => (d && prev?.publishedAt === d.publishedAt ? prev : d));
+    const load = () => (isPreview ? loadPreviewDemo() : loadPublishedDemo()).catch(() => null).then((d) => {
+      if (cancelled) return;
+      setDemoLoaded(true);
+      setDemo((prev) => (d && prev?.publishedAt === d.publishedAt ? prev : d));
     });
     load();
     if (isPreview) {
@@ -183,13 +188,20 @@ export default function Kiosk() {
   useEffect(() => {
     if (!fileKey || !demo) return;
     let cancelled = false;
-    loadPublishedModelFile(demo).then((f) => {
-      if (!cancelled && f) setModelFile({ key: fileKey, ...f });
-    });
-    return () => { cancelled = true; };
+    // Don't wait forever on a slow connection: after 30 s show the model's pictures instead.
+    const slow = setTimeout(() => setModelGaveUp(fileKey), 30000);
+    loadPublishedModelFile(demo)
+      .catch(() => null)
+      .then((f) => {
+        if (cancelled) return;
+        if (f) setModelFile({ key: fileKey, ...f });
+        else setModelGaveUp(fileKey);
+      });
+    return () => { cancelled = true; clearTimeout(slow); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the published file changes
   }, [fileKey]);
   const liveFile = modelFile && modelFile.key === fileKey ? modelFile : null;
+  const loading = !demoLoaded || (!!fileKey && !liveFile && modelGaveUp !== fileKey);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -384,12 +396,13 @@ export default function Kiosk() {
     s.zoomPart = near.part;
     s.zoomShift = [0, 0];
     s.zoomScale = 1;
-    aimZoom();
-    // The model stops turning and the part settles where it's pulled out: centre it again once it has.
-    for (const ms of [350, 800]) setTimeout(() => { if (ix.current.zoomPart === near.part) aimZoom(); }, ms);
+    pushHold();
+    // The model freezes as it is the moment the zoom starts; once that has drawn (two frames), move the part to the
+    // centre in one smooth step. Nothing moves after that until the visitor zooms out.
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (ix.current.zoomPart === near.part) aimZoom(); }));
     if (!session.current.zoomed.includes(near.part)) session.current.zoomed.push(near.part);
     return true;
-  }, [aimZoom]);
+  }, [aimZoom, pushHold]);
   const zoomOut = useCallback(() => {
     const s = ix.current;
     if (!s.zoomed) return false;
@@ -883,7 +896,14 @@ export default function Kiosk() {
           </div>
         )}
 
-        {screen === "hub" && (
+        {loading && (
+          <div className={styles.loadingScreen} role="status" aria-live="polite">
+            <span className={styles.loadingSpinner} aria-hidden="true" />
+            <span className={styles.loadingTitle}>LOADING THE DEMO</span>
+            <span className={styles.loadingSub}>{demoLoaded ? "Bringing in the 3D model…" : "One moment…"}</span>
+          </div>
+        )}
+        {!loading && screen === "hub" && (
           <Hub
             topic={topic}
             onPick={(i) => pickTopic(i)}

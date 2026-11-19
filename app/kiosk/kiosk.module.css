@@ -1263,3 +1263,42 @@ video.camVideo {
   mask-composite: intersect;
 }
 
+/* ---- Loading: shown until the published demo and its 3D model have arrived (never the demo earbud) ---- */
+.loadingScreen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.loadingSpinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(200, 216, 255, 0.2);
+  border-top-color: #c8d8ff;
+  border-radius: 50%;
+  animation: loading-spin 900ms linear infinite;
+}
+
+.loadingTitle {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.loadingSub {
+  font-size: 15px;
+  color: #c9cfdd;
+}
+
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

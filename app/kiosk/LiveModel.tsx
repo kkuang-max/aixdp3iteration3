@@ -16,19 +16,19 @@ export const liveNearest = new WeakMap<HTMLCanvasElement, (x: number, y: number)
 /** Where a named part is on screen right now (for centring a zoom on it). */
 export const liveBox = new WeakMap<HTMLCanvasElement, (part: string) => { l: number; t: number; r: number; b: number } | null>();
 
-type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; pull?: string | null };
+type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; pull?: string | null; frozen?: boolean };
 
 const SIZE = 460; // CSS px, the same box as the sample earbud
 const SWAY_S = 14; // one sway cycle, as the sample earbud
 const EASE = 3.5; // how fast explode / camera moves settle (per second)
 
-export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, pull = null }: Props) {
+export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, pull = null, frozen = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const target = useRef({ part, mode, paused, pull });
+  const target = useRef({ part, mode, paused, pull, frozen });
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    target.current = { part, mode, paused, pull };
-  }, [part, mode, paused, pull]);
+    target.current = { part, mode, paused, pull, frozen };
+  }, [part, mode, paused, pull, frozen]);
   const failRef = useRef(onFail);
   useEffect(() => {
     failRef.current = onFail;
@@ -147,13 +147,18 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
         const dt = Math.min((now - last) / 1000, 0.1);
         last = now;
         const k = 1 - Math.exp(-dt * EASE);
-        const { part: want, mode: how, paused: hold, pull: held } = target.current;
+        const { part: want, mode: how, paused: hold, pull: held, frozen } = target.current;
         const litName = want && want !== "Whole product" && want !== "None" ? want : null;
         const focus = info.find((p) => p.name === litName);
 
         if (litName !== shownPart) {
           applyLook(litName);
           shownPart = litName;
+        }
+        // Zoomed in: everything stays exactly where it is, so the part the page centred doesn't drift.
+        if (frozen) {
+          renderer.render(scene, camera);
+          return;
         }
 
         // Explode
