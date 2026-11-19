@@ -11,6 +11,9 @@ export type PublishedDemo = {
   version: 1;
   /** A draft opened with "Try it" in the portal: shows exactly what is filled in, nothing else. */
   preview?: boolean;
+  /** Set by the server for a booth's kiosk: how long the business keeps leads, and the booth it was loaded for. */
+  retentionDays?: number;
+  booth?: string;
   publishedAt: string;
   productName: string;
   sections: PublishedSection[];
@@ -86,7 +89,33 @@ export async function publishDemo(demo: PublishedDemo): Promise<{ local: boolean
 }
 
 /** The newest published demo: from the server if it has one, else from this browser. */
+/** The booth this kiosk belongs to: from ?booth= in the address, remembered on this device so a refresh keeps it. */
+export function kioskBooth(): string | null {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get("booth");
+    if (fromUrl) localStorage.setItem("playform.booth", fromUrl);
+    return fromUrl || localStorage.getItem("playform.booth");
+  } catch {
+    return null;
+  }
+}
+
 export async function loadPublishedDemo(): Promise<PublishedDemo | null> {
+  // A booth's kiosk shows only its business's published demo (from the account), never another one.
+  const booth = kioskBooth();
+  if (booth) {
+    try {
+      const res = await fetch(`/api/kiosk-config?booth=${encodeURIComponent(booth)}`, { cache: "no-store" });
+      if (res.ok) {
+        const d = await res.json();
+        if (isDemo(d)) return capRows(d);
+      }
+      // Booth exists but nothing published yet: show an empty demo rather than the sample.
+      if (res.status === 404) return { version: 1, publishedAt: "", productName: "", sections: [], mappings: [], booth };
+    } catch {
+      /* offline: fall through to this device's copy */
+    }
+  }
   let local: PublishedDemo | null = null;
   try {
     const d = await idb<unknown>("readonly", (s) => s.get(KEY));
@@ -196,7 +225,8 @@ export async function loadPublishedModelFile(demo: PublishedDemo): Promise<{ nam
   }
   if (file.path) {
     try {
-      const res = await fetch(`/api/kiosk-model?path=${encodeURIComponent(file.path)}`);
+      const booth = demo.booth ? `&booth=${encodeURIComponent(demo.booth)}` : "";
+      const res = await fetch(`/api/kiosk-model?path=${encodeURIComponent(file.path)}${booth}`);
       if (res.ok) return { name: file.name, data: await res.arrayBuffer() };
     } catch {
       /* offline: try the local copy */

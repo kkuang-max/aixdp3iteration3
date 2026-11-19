@@ -13,20 +13,22 @@ import styles from "./kiosk.module.css";
 export const livePickers = new WeakMap<HTMLCanvasElement, (x: number, y: number) => string | null>();
 /** Kiosk asks a live model which part is nearest a screen point (where to zoom in), and where that part is on screen. */
 export const liveNearest = new WeakMap<HTMLCanvasElement, (x: number, y: number) => { part: string; cx: number; cy: number; size: number } | null>();
+/** Where a named part is on screen right now (for centring a zoom on it). */
+export const liveBox = new WeakMap<HTMLCanvasElement, (part: string) => { l: number; t: number; r: number; b: number } | null>();
 
-type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; pull?: string | null };
+type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; pull?: string | null; frozen?: boolean };
 
 const SIZE = 460; // CSS px, the same box as the sample earbud
 const SWAY_S = 14; // one sway cycle, as the sample earbud
 const EASE = 3.5; // how fast explode / camera moves settle (per second)
 
-export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, pull = null }: Props) {
+export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, pull = null, frozen = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const target = useRef({ part, mode, paused, pull });
+  const target = useRef({ part, mode, paused, pull, frozen });
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    target.current = { part, mode, paused, pull };
-  }, [part, mode, paused, pull]);
+    target.current = { part, mode, paused, pull, frozen };
+  }, [part, mode, paused, pull, frozen]);
   const failRef = useRef(onFail);
   useEffect(() => {
     failRef.current = onFail;
@@ -112,7 +114,7 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
           dim: list.map((mat) => {
             const c = mat.clone();
             c.transparent = true;
-            c.opacity = 0.18;
+            c.opacity = 0.15;
             c.depthWrite = false;
             return c;
           }),
@@ -123,7 +125,8 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
         const litMeshes = new Set(info.find((p) => p.name === lit)?.meshes ?? []);
         for (const [m, look] of looks) {
           if (!litMeshes.size) m.material = look.normal;
-          else m.material = litMeshes.has(m) ? (Array.isArray(look.normal) ? look.lit : look.lit[0]) : (Array.isArray(look.normal) ? look.dim : look.dim[0]);
+          // The selected part keeps its own look; everything else goes see-through.
+          else m.material = litMeshes.has(m) ? look.normal : (Array.isArray(look.normal) ? look.dim : look.dim[0]);
         }
       };
 
@@ -144,13 +147,18 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
         const dt = Math.min((now - last) / 1000, 0.1);
         last = now;
         const k = 1 - Math.exp(-dt * EASE);
-        const { part: want, mode: how, paused: hold, pull: held } = target.current;
+        const { part: want, mode: how, paused: hold, pull: held, frozen } = target.current;
         const litName = want && want !== "Whole product" && want !== "None" ? want : null;
         const focus = info.find((p) => p.name === litName);
 
         if (litName !== shownPart) {
           applyLook(litName);
           shownPart = litName;
+        }
+        // Zoomed in: everything stays exactly where it is, so the part the page centred doesn't drift.
+        if (frozen) {
+          renderer.render(scene, camera);
+          return;
         }
 
         // Explode
@@ -196,21 +204,29 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
         const hit = raycaster.intersectObjects(meshes, false)[0];
         return hit ? (partOfMesh.get(hit.object) ?? null) : null;
       });
-      liveNearest.set(canvas, (x, y) => {
+      // A part's box on screen: its 3D box's 8 corners projected.
+      const screenBox = (p: (typeof info)[number]) => {
         const r = canvas.getBoundingClientRect();
+        const box = new THREE.Box3().setFromObject(p.node);
+        let l = Infinity, t = Infinity, rr = -Infinity, bb = -Infinity;
+        for (const cx of [box.min.x, box.max.x]) for (const cy of [box.min.y, box.max.y]) for (const cz of [box.min.z, box.max.z]) {
+          const v = new THREE.Vector3(cx, cy, cz).project(camera);
+          const sx = r.left + ((v.x + 1) / 2) * r.width, sy = r.top + ((1 - v.y) / 2) * r.height;
+          l = Math.min(l, sx); rr = Math.max(rr, sx); t = Math.min(t, sy); bb = Math.max(bb, sy);
+        }
+        return { l, t, r: rr, b: bb };
+      };
+      liveBox.set(canvas, (name) => {
+        const p = info.find((x) => x.name === name);
+        return p ? screenBox(p) : null;
+      });
+      liveNearest.set(canvas, (x, y) => {
         // The part right under the point wins; otherwise the part whose centre is nearest on screen.
         const under = livePickers.get(canvas)?.(x, y) ?? null;
         let best: { part: string; cx: number; cy: number; size: number } | null = null;
         let bestD = Infinity;
         for (const p of info) {
-          // The part's box on screen: its 8 corners projected.
-          const box = new THREE.Box3().setFromObject(p.node);
-          let l = Infinity, t = Infinity, rr = -Infinity, bb = -Infinity;
-          for (const cx of [box.min.x, box.max.x]) for (const cy of [box.min.y, box.max.y]) for (const cz of [box.min.z, box.max.z]) {
-            const v = new THREE.Vector3(cx, cy, cz).project(camera);
-            const sx = r.left + ((v.x + 1) / 2) * r.width, sy = r.top + ((1 - v.y) / 2) * r.height;
-            l = Math.min(l, sx); rr = Math.max(rr, sx); t = Math.min(t, sy); bb = Math.max(bb, sy);
-          }
+          const { l, t, r: rr, b: bb } = screenBox(p);
           const cx = (l + rr) / 2, cy = (t + bb) / 2;
           const d = p.name === under ? -1 : Math.hypot(cx - x, cy - y);
           if (d < bestD) { bestD = d; best = { part: p.name, cx, cy, size: Math.max(rr - l, bb - t) }; }
@@ -222,6 +238,7 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
       cleanup = () => {
         livePickers.delete(canvas);
         liveNearest.delete(canvas);
+        liveBox.delete(canvas);
         cancelAnimationFrame(raf);
         for (const look of looks.values()) [...look.lit, ...look.dim].forEach((m) => m.dispose());
         root.traverse((o) => {

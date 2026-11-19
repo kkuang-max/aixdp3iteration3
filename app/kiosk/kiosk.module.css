@@ -1253,7 +1253,52 @@ video.camVideo {
 }
 
 .modelZoomClip:has(> .modelZoom[data-zoomed]) {
-  -webkit-mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
-  mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
+  /* Zoomed in: the model only shows between the topics and the text, fading out at the edges. The zoomed part itself
+     always fits inside (it's sized to 360×400 around 630,320). */
+  -webkit-mask-image: linear-gradient(to right, transparent 370px, #000 410px, #000 812px, transparent 842px),
+    linear-gradient(to bottom, transparent 70px, #000 105px, #000 560px, transparent 600px);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 370px, #000 410px, #000 812px, transparent 842px),
+    linear-gradient(to bottom, transparent 70px, #000 105px, #000 560px, transparent 600px);
+  mask-composite: intersect;
 }
 
+/* ---- Loading: shown until the published demo and its 3D model have arrived (never the demo earbud) ---- */
+.loadingScreen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.loadingSpinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(200, 216, 255, 0.2);
+  border-top-color: #c8d8ff;
+  border-radius: 50%;
+  animation: loading-spin 900ms linear infinite;
+}
+
+.loadingTitle {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.loadingSub {
+  font-size: 15px;
+  color: #c9cfdd;
+}
+
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

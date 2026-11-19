@@ -71,7 +71,7 @@ const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.t
 const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null; frozen?: boolean }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
@@ -79,14 +79,14 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
     // Only How it works and Specs light or move parts; other topics show the whole model turning.
     const mapping = props.interactive ? demo.mappings.find((m) => m.sectionId === props.topicId) : undefined;
     // A row the visitor points at / swiped to wins over the topic's mapped part.
-    const part = props.rowPart ?? mapping?.part;
+    const part = props.rowPart ?? null; // only a part the visitor selects changes the look
     const mode = !props.interactive ? "Slow turn" : props.rowPart ? (props.topicId === "how" ? "Explode apart" : "Highlight") : (mapping?.mode ?? "Highlight");
     if (file && failed !== file.data) {
       return (
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} />
+            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} frozen={props.frozen} />
           </div>
         </>
       );
@@ -165,11 +165,10 @@ export function Hub(props: {
   // Zoomed in on a part: that part stays lit; otherwise what's pointed at.
   const zoomPart = interactive && props.hold.zoomed ? props.hold.zoomPart : null;
   const litPart = zoomPart ?? hoverPart ?? (active ? rowPart(active) : null);
-  const highlight = !interactive ? NO_PARTS : !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
+  const highlight = interactive && !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : NO_PARTS;
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
   // Hold and pinch: only parts on How it works / Specs pull out and zoom; elsewhere holding just stops the spin.
-  // (A zoomed part stays where it was when the zoom was aimed, so the zoom centres on it.)
-  const pulled = zoomPart ? null : interactive && props.hold.holding ? props.hold.part : null;
+  const pulled = zoomPart ?? (interactive && props.hold.holding ? props.hold.part : null);
   // A published demo shows only what the business wrote (nothing is made up); before anything is published, the
   // built-in Orbit Earbuds example.
   const gestureText: GestureText = demo ? (demo.gestureText ?? { whole: "", parts: {} }) : SAMPLE_GESTURE_TEXT;
@@ -220,9 +219,9 @@ export function Hub(props: {
       <div
         className={styles.modelZoom}
         data-zoomed={zoomPart ? "" : undefined}
-        style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: props.hold.origin }}
+        style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: "0 0" }}
       >
-        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding} pull={pulled} />
+        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} pull={pulled} frozen={!!zoomPart} />
       </div>
       </div>
 
@@ -542,6 +541,7 @@ export function Brochure(props: SendProps & { accent: string }) {
 // ---- Leave contact info for later -----------------------------------------------------
 export function Contact(props: SendProps & { accent: string; onBrochure: () => void }) {
   const productName = useProductName();
+  const demo = useContext(DemoContext);
   const [done, setDone] = useState(false);
   const [scanning, setScanning] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -552,7 +552,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
         eyebrow={named(productName, "LEAVE CONTACT INFO")}
         title="THANKS, WE’LL BE IN TOUCH"
         body={`Your details have been sent to the ${productName ? `${titleCase(productName)} team` : "team"}. They’ll be in touch about your inquiry.`}
-        note="Your contact information will be deleted after [X days]."
+        note={`Your contact information will be deleted after ${demo?.retentionDays ? `${demo.retentionDays} day${demo.retentionDays === 1 ? "" : "s"}` : "[X days]"}.`}
         onDone={props.onBack}
         accent={props.accent}
       />

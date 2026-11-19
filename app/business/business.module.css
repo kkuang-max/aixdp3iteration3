@@ -63,7 +63,7 @@
 /* Auto / manual switch (top right). */
 .modeSwitch {
   position: absolute;
-  right: 72px;
+  right: 215px;
   top: 12px;
   z-index: 3;
   display: flex;
@@ -1667,7 +1667,7 @@
 
 .restartBtn {
   position: absolute;
-  right: 252px;
+  right: 397px;
   top: 14px;
   z-index: 3;
   height: 30px;
@@ -2018,5 +2018,333 @@
 
 .usedChipRemove:hover {
   background: rgba(200, 216, 255, 0.2);
+}
+
+/* ---- Accounts: sign in, Booths & leads ---- */
+.accountBtn {
+  position: absolute;
+  right: 72px;
+  top: 14px;
+  z-index: 3;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(12, 15, 28, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.accountBtn[data-current] {
+  border-color: #c8d8ff;
+}
+
+.authCard {
+  position: absolute;
+  left: 80px;
+  top: 168px;
+  width: 440px;
+  padding: 26px 29px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.authCard .submitBtn {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.authError,
+.authInfo,
+.authSwitch {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.authError {
+  color: #f0a3a3;
+}
+
+.authInfo {
+  color: #c8d8ff;
+}
+
+.authSwitch {
+  color: #aeb4c6;
+}
+
+
+
+
+.boothList {
+  align-self: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+
+
+.boothLink {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #c9cfdd;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.boothRow a.smallPill {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+
+
+
+
+.leadsCard {
+  position: absolute;
+  left: 561px;
+  top: 168px;
+  width: 607px;
+  height: 434px;
+  padding: 20px 22px;
+  background: #1b2036;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.statsRow span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: #aeb4c6;
+}
+
+.statsRow b {
+  font-size: 18px;
+  font-weight: 600;
+  color: #eef1f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leadsHead,
+.leadRow {
+  display: grid;
+  grid-template-columns: 1.3fr 1.3fr 1.2fr 0.9fr 28px;
+  gap: 10px;
+  align-items: center;
+}
+
+.leadsHead {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #aeb4c6;
+}
+
+.leadsList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.leadRow {
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+}
+
+.leadRow small {
+  display: block;
+  font-size: 11px;
+  color: #aeb4c6;
+}
+
+/* Open kiosk: left of Booths & leads when signed in, else left of Restart. */
+
+
+.accountBtn:hover {
+  border-color: #eef1f8;
+}
+
+/* Account menu: the far-right button of the top bar (Restart and Auto / Manual sit to its left) */
+.accountMenu {
+  position: absolute;
+  right: 72px;
+  top: 14px;
+  z-index: 25;
+}
+
+.accountMenu .accountBtn,
+.accountBtn {
+  position: static;
+}
+
+.stage > .accountBtn {
+  position: absolute;
+  right: 72px;
+  top: 14px;
+}
+
+.avatar {
+  width: 20px;
+  height: 20px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: #c8d8ff;
+  color: #1b2036;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: 38px;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: #1f2640;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu button {
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font-size: 14px !important;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  background: rgba(200, 216, 255, 0.12);
+  outline: none;
+}
+
+.menuEmail {
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  color: #aeb4c6;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.menuRule {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Booths & leads: booth list */
+.boothCard {
+  position: absolute;
+  left: 80px;
+  top: 168px;
+  width: 440px;
+  height: 434px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.boothHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.boothHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #aeb4c6;
+}
+
+.boothRow {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.boothText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 15px;
+}
+
+.boothActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.retention {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.retention .boothHint {
+  flex-basis: 100%;
+}
+
+.retentionInput {
+  width: 64px;
+  height: 36px;
+  text-align: center;
 }
 

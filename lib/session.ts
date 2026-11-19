@@ -21,6 +21,7 @@ export type Session = {
   staffAsked: number | null; // when they asked for a team member
   staff: number; // which team member is coming (index into STAFF)
   staffAccepted: boolean;
+  zoomed: string[]; // parts the visitor zoomed in on
 };
 
 export const newSession = (): Session => ({
@@ -37,6 +38,7 @@ export const newSession = (): Session => ({
   staffAsked: null,
   staff: 0,
   staffAccepted: false,
+  zoomed: [],
 });
 
 // A topic counts as explored once it was opened on purpose or read for a few seconds.
@@ -62,26 +64,47 @@ export const minutesAt = (s: Session, now: number) => {
   return m < 1 ? "Under 1 min" : `${m} min`;
 };
 
-// Leads are kept on this machine for the prototype (a real booth would send them to the CRM).
+// Leads: a booth's kiosk sends them to the business's account (deleted after the business's retention period). A kiosk
+// with no booth (the open demo) keeps them in this browser only.
 const LEADS_KEY = "playform.leads";
-export function saveLead(s: Session, method: LeadMethod, kind: LeadKind = "brochure") {
+export function saveLead(s: Session, method: LeadMethod, kind: LeadKind = "brochure", booth: string | null = null) {
+  const contact = method === "email" ? s.email.trim() : "";
+  const lead = {
+    at: new Date().toISOString(),
+    kind,
+    method,
+    name: method === "email" ? s.name || null : null,
+    // The contact field takes an email address or (on "Leave contact info") a phone number.
+    email: contact.includes("@") ? contact : null,
+    phone: contact && !contact.includes("@") ? contact : null,
+    questions: s.questions || null,
+    company: s.company || null,
+    explored: exploredTopics(s).map((t) => t.short),
+  };
+  if (booth) {
+    fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...lead, booth }), keepalive: true }).catch(() => {});
+    return;
+  }
   try {
     const leads = JSON.parse(localStorage.getItem(LEADS_KEY) ?? "[]");
-    leads.push({
-      at: new Date().toISOString(),
-      kind,
-      method,
-      name: method === "email" ? s.name || null : null,
-      // The contact field takes an email address or (on "Leave contact info") a phone number.
-      email: method === "email" && s.email.includes("@") ? s.email.trim() : null,
-      phone: method === "email" && !s.email.includes("@") ? s.email.trim() : null,
-      questions: s.questions || null,
-      company: s.company || null,
-      pricing: s.pricing,
-      explored: exploredTopics(s).map((t) => t.short),
-    });
+    leads.push({ ...lead, pricing: s.pricing });
     localStorage.setItem(LEADS_KEY, JSON.stringify(leads));
   } catch {
     // Storage blocked: the confirmation still shows; nothing to recover for a prototype.
   }
+}
+
+/** A booth's kiosk records what each visitor did (no names or contact details) when they leave. */
+export function saveVisit(s: Session, booth: string | null) {
+  if (!booth || !s.start) return;
+  const body = JSON.stringify({
+    booth,
+    startedAt: s.start,
+    topicMs: s.time,
+    topics: s.picked,
+    zoomedParts: s.zoomed,
+    leftLead: s.contacted || !!s.sent,
+    askedForTeam: !!s.staffAsked,
+  });
+  if (!navigator.sendBeacon?.("/api/visits", body)) fetch("/api/visits", { method: "POST", body, keepalive: true }).catch(() => {});
 }
