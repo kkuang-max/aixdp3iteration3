@@ -947,7 +947,7 @@ export default function BusinessPage() {
             <KioskPreview section={s} small />
           </Clamp>
         </div>
-        <Foot back={{ label: "ALL SECTIONS", onClick: () => go({ name: "a-upload" }) }} next={<>
+        <Foot back={{ label: "BACK", onClick: () => go({ name: "a-upload" }) }} next={<>
           <button type="button" className={styles.outlineBtn} onClick={() => go({ name: "i-list" })}>CHECK GESTURES <Arrow /></button>
           <button type="button" className={styles.outlineBtn} onClick={() => { setNotice(next ? `Saved. Next: ${next.label}.` : "Section saved."); if (next) go({ name: "a-edit", id: next.id }); }}>SAVE SECTION</button>
         </>} />
