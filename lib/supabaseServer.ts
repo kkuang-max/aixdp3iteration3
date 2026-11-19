@@ -14,12 +14,15 @@ export function adminClient(): SupabaseClient {
   return admin;
 }
 
-/** The signed-in business making the request (from its Bearer token), or null. */
-export async function requestUser(request: Request): Promise<User | null> {
+/** The signed-in business making the request, from its Bearer token: the token's signature is checked against the
+ *  project's public signing keys, so a business can only ever act as itself. Null when signed out or invalid. */
+export async function requestUser(request: Request): Promise<Pick<User, "id" | "email"> | null> {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token || !serverSupabaseEnabled()) return null;
-  const { data, error } = await adminClient().auth.getUser(token);
-  return error ? null : data.user;
+  const { data, error } = await adminClient().auth.getClaims(token);
+  const sub = data?.claims?.sub;
+  if (error || !sub || data.claims.role !== "authenticated") return null;
+  return { id: sub, email: typeof data.claims.email === "string" ? data.claims.email : undefined };
 }
 
 /** A kiosk's booth → the business it belongs to. Booth ids are short random strings from the portal. */

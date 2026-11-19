@@ -288,6 +288,29 @@ screen size or resolution (other shapes get dark bars at the sides or top and bo
   asks the AI for; the parts views stay empty until a 3D model is uploaded, and publishing waits until every section
   has a headline and a row and at least one interaction exists.
 
+## Business accounts (Supabase)
+
+When the deployment has Supabase keys, the business portal asks the business to **sign in or create an account**
+(email and password) before anything else. Without them, the portal works the old way: everything stays in that
+browser.
+
+- **Saved to the account:** the portal's draft and the uploaded PRD and 3D model, so a business can pick up on any
+  device. Signing out clears the browser for the next person. Restart clears the account's draft and uploads too.
+- **Booths & leads** (top right): make a kiosk link for each booth (`/?booth=…`), set how many days leads are kept,
+  and see the account's leads (with when each one is deleted) and visit stats (visits, leads, average visit, the
+  topic that held people longest).
+- **Publish** sends the demo to every booth on the account. A kiosk opened with a booth link shows only that
+  business's published demo, saves leads to that business, and records each visit (topics, time on each, parts zoomed
+  in on; no names or contact details). The contact confirmation says the real number of days before deletion, and
+  expired leads are deleted every night.
+- **Security:** each business can only read and change its own data (row-level security in the database). Kiosks don't
+  sign in: they send leads and visits to the app's server, which checks the booth and saves them.
+
+**Setting it up (once):** create a Supabase project, connect it to the Vercel project (Supabase → Project Settings →
+Integrations → Vercel; tick the variables for Preview too), run `supabase/schema.sql` in Supabase's SQL Editor, and in
+Authentication → URL Configuration set the Site URL to the Vercel site and add `https://aixdp3iteration3-*.vercel.app/**`
+to the redirect URLs.
+
 ## Publishing to the kiosk
 
 **Publish to kiosk** (last step of the business portal) saves the sections, gesture mappings, product name and pictures
@@ -317,7 +340,11 @@ kiosk keeps the last published demo until you publish again.
 - `lib/modelParts.ts` — reads an uploaded 3D model, splits it into parts and renders each one. `lib/fileStore.ts` keeps
   uploads in the browser.
 - `app/kiosk/LiveModel.tsx` — the uploaded model drawn live on the kiosk.
-- `lib/published.ts` + `app/api/kiosk-config/route.ts` — the published demo (browser copy + Vercel Blob).
+- `lib/published.ts` + `app/api/kiosk-config/route.ts` — the published demo (browser copy + Vercel Blob, or a booth's
+  demo from Supabase).
+- `lib/supabase.ts` (browser) / `lib/supabaseServer.ts` (server) and `app/business/Account.tsx` — business accounts,
+  booths and leads. `app/api/publish`, `app/api/leads`, `app/api/visits` — the routes kiosks and the portal call.
+  `supabase/schema.sql` — the database.
 - `app/api/build-demo/route.ts` — the AI route (Claude reads the product doc and drafts the demo).
 - `app/api/build-section/route.ts` — manual setup's AI route (Claude formats one section from typed notes or a file).
 - `lib/aiServer.ts` — shared by both AI routes: the 5-row cap, reading the attached file, error messages.
