@@ -11,6 +11,8 @@ import styles from "./kiosk.module.css";
 
 /** Kiosk asks a live model which part is under a screen point (for hover). */
 export const livePickers = new WeakMap<HTMLCanvasElement, (x: number, y: number) => string | null>();
+/** Kiosk asks a live model which part is nearest a screen point (where to zoom in), and where that part is on screen. */
+export const liveNearest = new WeakMap<HTMLCanvasElement, (x: number, y: number) => { part: string; cx: number; cy: number; size: number } | null>();
 
 type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; pull?: string | null };
 
@@ -194,10 +196,32 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
         const hit = raycaster.intersectObjects(meshes, false)[0];
         return hit ? (partOfMesh.get(hit.object) ?? null) : null;
       });
+      liveNearest.set(canvas, (x, y) => {
+        const r = canvas.getBoundingClientRect();
+        // The part right under the point wins; otherwise the part whose centre is nearest on screen.
+        const under = livePickers.get(canvas)?.(x, y) ?? null;
+        let best: { part: string; cx: number; cy: number; size: number } | null = null;
+        let bestD = Infinity;
+        for (const p of info) {
+          // The part's box on screen: its 8 corners projected.
+          const box = new THREE.Box3().setFromObject(p.node);
+          let l = Infinity, t = Infinity, rr = -Infinity, bb = -Infinity;
+          for (const cx of [box.min.x, box.max.x]) for (const cy of [box.min.y, box.max.y]) for (const cz of [box.min.z, box.max.z]) {
+            const v = new THREE.Vector3(cx, cy, cz).project(camera);
+            const sx = r.left + ((v.x + 1) / 2) * r.width, sy = r.top + ((1 - v.y) / 2) * r.height;
+            l = Math.min(l, sx); rr = Math.max(rr, sx); t = Math.min(t, sy); bb = Math.max(bb, sy);
+          }
+          const cx = (l + rr) / 2, cy = (t + bb) / 2;
+          const d = p.name === under ? -1 : Math.hypot(cx - x, cy - y);
+          if (d < bestD) { bestD = d; best = { part: p.name, cx, cy, size: Math.max(rr - l, bb - t) }; }
+        }
+        return best;
+      });
       setReady(true);
 
       cleanup = () => {
         livePickers.delete(canvas);
+        liveNearest.delete(canvas);
         cancelAnimationFrame(raf);
         for (const look of looks.values()) [...look.lit, ...look.dim].forEach((m) => m.dispose());
         root.traverse((o) => {

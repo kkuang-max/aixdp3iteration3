@@ -199,12 +199,14 @@ If the hand stays near an edge of the camera view, the kiosk says so ("Raise you
 loses hands near the edges.
 
 **Hold and pinch on the model.** Holding a hand (or the mouse, or a finger) over the 3D model stops it turning. On
-How it works and Specs, it also pulls the part under the pointer out of the model and shows its short label. Pinching
-zooms in on that part, the way people zoom on a phone: spread the thumb and index finger apart in front of the camera
-(closing them zooms back out), spread two fingers on a touchscreen, or pinch on a trackpad (the scroll wheel works
-too). Zoomed in, the kiosk shows the part's longer text and specs. Moving off the model lets go. What each gesture
-says is written per part on the business side's Interactions screen (Gesture → Does → What it says); on What it is,
-What's different and Where it's used, holding just pauses the spin and shows the whole product's line.
+What it is, What's different and Where it's used, that's all it does (no description). On How it works and Specs, the
+part under the pointer also pulls out, and pinching zooms in, the way people zoom on a phone: spread the thumb and
+index finger apart in front of the camera, spread two fingers on a touchscreen, or pinch out / scroll up on a
+trackpad. The zoom picks the part closest to where the visitor is pointing, brings it to the middle, and the panel on
+the right shows just that part's details (its label, a sentence or two, and specs). It stays zoomed in, even if the
+hand drops, until the visitor does the reverse: pinches the thumb and finger back together (or two fingers on a
+touchscreen, or pinches in / scrolls down). What each part says is written on the business side's Interactions screen
+(Gesture → Does → What it says).
 
 ## How swipes are read
 

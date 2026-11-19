@@ -1205,56 +1205,55 @@ video.camVideo {
   transition: transform 160ms ease-out;
 }
 
-.callout {
-  position: absolute;
-  left: 430px;
-  top: 530px;
-  width: 400px;
-  padding: 12px 18px;
-  border: 1px solid rgba(200, 216, 255, 0.45);
-  border-radius: 16px;
-  background: rgba(19, 24, 38, 0.86);
-  backdrop-filter: blur(6px);
+/* Zoomed in on a part: the right-hand panel shows just that part. */
+.modelZoom {
+  transition: transform 350ms ease-out;
+}
+
+.partDetail {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  text-align: center;
-  animation: rise 250ms ease-out both;
-  pointer-events: none;
-  z-index: 5;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.callout[data-zoomed] {
-  top: 455px;
-  gap: 6px;
-  padding: 16px 22px;
-}
-
-.calloutName {
-  font-size: 12px;
+.partDetailLead {
+  font-size: 19px;
   font-weight: 600;
-  letter-spacing: 0.2em;
   color: #c8d8ff;
 }
 
-.calloutBody {
-  font-size: 17px;
-  line-height: 1.35;
+.partDetailBody {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
   color: #eef1f8;
 }
 
-.calloutSpecs {
-  font-size: 14px;
+.partDetailSpecs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 16px;
   color: #c9cfdd;
 }
 
-.calloutHint {
-  margin-top: 2px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
+.partDetailLabel {
+  font-size: 11px;
+  letter-spacing: 0.2em;
   color: #aeb4c6;
+}
+
+/* Zoomed in: only the model area shows the model, so other parts don't slide over the topics or the text. */
+.modelZoomClip {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.modelZoomClip:has(> .modelZoom[data-zoomed]) {
+  -webkit-mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
+  mask-image: radial-gradient(ellipse 250px 270px at 630px 300px, #000 72%, transparent 100%);
 }
 

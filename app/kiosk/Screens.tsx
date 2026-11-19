@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
 import { SAMPLE_GESTURE_TEXT, SAMPLE_PART_NAMES, type GestureText } from "@/lib/gestureText";
+import type { HoldState } from "./Kiosk";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { matchPart, type PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
@@ -105,48 +106,6 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
   return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} paused={props.paused} pull={props.pull as PartId | null} />;
 }
 
-/** What holding and pinching show: the whole product's line, a part's label, or (zoomed in) its text and specs. */
-function GestureCallout(props: { text: GestureText; sample: boolean; part: string | null; whole: boolean; zoom: number }) {
-  const { text, part, zoom } = props;
-  if (part) {
-    const t = text.parts[part];
-    const name = props.sample ? (SAMPLE_PART_NAMES[part] ?? part) : part;
-    if (zoom > 0.35 && (t?.pinch || t?.specs)) {
-      return (
-        <div className={styles.callout} data-zoomed="" role="status">
-          <span className={styles.calloutName}>{name.toUpperCase()}</span>
-          {t.pinch && <span className={styles.calloutBody}>{t.pinch}</span>}
-          {t.specs && <span className={styles.calloutSpecs}>{t.specs}</span>}
-        </div>
-      );
-    }
-    return (
-      <div className={styles.callout} role="status">
-        <span className={styles.calloutName}>{name.toUpperCase()}</span>
-        {t?.hover && <span className={styles.calloutBody}>{t.hover}</span>}
-        {(t?.pinch || t?.specs) && <span className={styles.calloutHint}><PinchIcon /> Spread your thumb and finger apart to zoom in</span>}
-      </div>
-    );
-  }
-  if (props.whole && text.whole) {
-    return (
-      <div className={styles.callout} role="status">
-        <span className={styles.calloutBody}>{text.whole}</span>
-      </div>
-    );
-  }
-  return null;
-}
-
-/** Thumb and index finger moving apart. */
-function PinchIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 20l6-6M20 4l-6 6M4 20v-5M4 20h5M20 4v5M20 4h-5" />
-    </svg>
-  );
-}
-
 /** The portal's demo has no 3D model yet: say so instead of showing the sample earbud. */
 function NoModel() {
   return (
@@ -177,7 +136,7 @@ export function Hub(props: {
   activeRow: number | null;
   modelPart: string | null; // the part of the model under the pointer
   /** Holding over the model (stops it turning, pulls the part out) and pinch zoom (0..1) on a part. */
-  hold: { holding: boolean; zoom: number; part: string | null; origin: string };
+  hold: HoldState;
   onRow: (i: number) => void;
   explode: number;
   accent: string;
@@ -203,16 +162,19 @@ export function Hub(props: {
   const rowPart = (r: { a: string; part?: PartId }): string | null => (demo?.model ? matchPart(r.a, partNames) : (r.part ?? null));
   // Pointing at a part lights it and every row about it; pointing at (or swiping to) a row lights its part.
   const hoverPart = interactive ? props.modelPart : null;
-  const litPart = hoverPart ?? (active ? rowPart(active) : null);
+  // Zoomed in on a part: that part stays lit; otherwise what's pointed at.
+  const zoomPart = interactive && props.hold.zoomed ? props.hold.zoomPart : null;
+  const litPart = zoomPart ?? hoverPart ?? (active ? rowPart(active) : null);
   const highlight = !interactive ? NO_PARTS : !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : base.highlight;
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
   // Hold and pinch: only parts on How it works / Specs pull out and zoom; elsewhere holding just stops the spin.
-  const pulled = interactive && props.hold.holding ? props.hold.part : null;
-  const zoom = interactive && props.hold.part ? props.hold.zoom : 0;
-  const zoomOrigin = props.hold.origin;
+  // (A zoomed part stays where it was when the zoom was aimed, so the zoom centres on it.)
+  const pulled = zoomPart ? null : interactive && props.hold.holding ? props.hold.part : null;
   // A published demo shows only what the business wrote (nothing is made up); before anything is published, the
   // built-in Orbit Earbuds example.
   const gestureText: GestureText = demo ? (demo.gestureText ?? { whole: "", parts: {} }) : SAMPLE_GESTURE_TEXT;
+  const zoomText = zoomPart ? gestureText.parts[zoomPart] : undefined;
+  const zoomName = zoomPart ? (demo ? zoomPart : (SAMPLE_PART_NAMES[zoomPart] ?? zoomPart)) : "";
   return (
     <>
       <div className={styles.eyebrow}>
@@ -254,17 +216,35 @@ export function Hub(props: {
       {/* The model: holding over it stops it turning (and on How it works / Specs pulls the pointed part out);
           pinching zooms in on that part. data-model-zone is the area the kiosk treats as "over the model". */}
       <div className={styles.modelZone} data-model-zone="" aria-hidden="true" />
-      <div className={styles.modelZoom} style={{ transform: `scale(${1 + zoom * 0.5})`, transformOrigin: zoomOrigin }}>
+      <div className={styles.modelZoomClip}>
+      <div
+        className={styles.modelZoom}
+        data-zoomed={zoomPart ? "" : undefined}
+        style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: props.hold.origin }}
+      >
         <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding} pull={pulled} />
       </div>
-      <GestureCallout
-        text={gestureText}
-        sample={!demo}
-        part={interactive && props.hold.holding ? props.hold.part : null}
-        whole={!interactive && props.hold.holding}
-        zoom={zoom}
-      />
+      </div>
 
+
+      {zoomPart ? (
+      <section key={`zoom-${zoomPart}`} className={styles.panel} aria-live="polite">
+        <span className={styles.panelKicker}>
+          {t.n} · {t.label}
+        </span>
+        <h1 className={styles.panelTitle}>{zoomName}</h1>
+        <div className={styles.partDetail}>
+          {zoomText?.hover && <span className={styles.partDetailLead}>{zoomText.hover}</span>}
+          {zoomText?.pinch && <p className={styles.partDetailBody}>{zoomText.pinch}</p>}
+          {zoomText?.specs && (
+            <div className={styles.partDetailSpecs}>
+              <span className={styles.partDetailLabel}>SPECS</span>
+              <span>{zoomText.specs}</span>
+            </div>
+          )}
+        </div>
+      </section>
+      ) : (
       <section key={t.id} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>
           {t.n} · {t.label}
@@ -285,6 +265,7 @@ export function Hub(props: {
           ))}
         </div>
       </section>
+      )}
 
       <div className={styles.guide}>
         <span key={props.guide.title} className={styles.guideTitle}>
