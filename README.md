@@ -10,8 +10,8 @@ lets visitors ask for a team member, and collects leads. It has two sides:
 - **Customer side (the kiosk):** what expo visitors use, with a hand in front of the camera, touch or a mouse. It shows
   exactly what the business published.
 
-Before anything has been published, the kiosk shows our built-in example, **Orbit Earbuds**. Details we don't have,
-like the brand, booth number and staff names, are bracketed placeholders, e.g. `[BRAND]`, `[X] h`, `[Staff name]`.
+Before anything has been published, the kiosk shows our built-in example, **Orbit Earbuds**, filled with made-up
+dummy values for testing (brand "Lumen Audio", booth 214, specs, staff names); none of it is real.
 
 Prototype v2 builds on Prototype v1 (iteration 3), which started from iteration 2
 ([kkuang-max/p3iteration2](https://github.com/kkuang-max/p3iteration2)), with its full history, and was redesigned
@@ -63,9 +63,10 @@ mouse work too.
 - **Nothing is sent to anyone.** Leads (name, email or phone, company, questions) are only saved in that browser's
   storage (`playform.leads`). A real booth would send them to its CRM. No ticket number, wait time or brochure is
   actually emailed.
-- **"Deleted after [X days]"** is the wording only. Leads aren't deleted automatically yet.
-- **The brochure QR code** is a placeholder (`[QR]`), and staff names, booth number and wait time are bracketed
-  placeholders.
+- **Leads on a kiosk without a booth link** stay in that browser and aren't deleted automatically. Leads from a booth
+  kiosk go to the business's account and are deleted after the account's retention period (every night).
+- **The brochure QR code** is a placeholder (`[QR]`). In the built-in example, the brand, booth, staff names, wait
+  time and specs are made-up dummy values.
 - **Publishing to other devices** needs a Vercel Blob store connected to the deployment. Without one, the kiosk only
   picks up a demo published from the same browser.
 
@@ -182,6 +183,18 @@ starts over. Staff can press `r` to start fresh straight away.
 part on the model; pointing at a part of the model lights that part and every row about it (e.g. the chip board lights
 Bluetooth and Works with). In swipe mode, swiping up or down steps through the rows one at a time (stopping at the first
 and last). With an uploaded model, each row is matched to the model part with the closest name.
+
+**Typing without a keyboard.** On Talk to our team, Get digital brochure and Leave contact info, picking a field
+(holding a hand over it, a tap or a click), or **Type on your phone or the screen**, opens a panel on the left:
+
+- **Type on your phone:** a QR code opens the same form on the visitor's own phone (`/type/<code>`). When they press
+  Send there, the kiosk picks the details up within a couple of seconds and sends them like any other lead. The details
+  are held for at most 15 minutes and deleted as soon as the kiosk reads them (needs Supabase; without it, only the
+  keyboard shows). Note: Vercel preview links are behind Vercel's login, so phones need the production address.
+- **On-screen keyboard:** keys are pressed by holding a hand over them (about 0.65 s; Delete repeats while held), a tap
+  or a click. Email shortcuts (@ . _ - .com @gmail @outlook), suggestions (email addresses from the name typed, email
+  domains, names and common words), a number pad for phone numbers (opens by itself when a phone number is started,
+  or with 123), and Next to move to the next field.
 
 ## Hand interaction
 
@@ -351,6 +364,8 @@ kiosk keeps the last published demo until you publish again.
 - `app/business/page.tsx` — business portal (`/business`): auto setup (default) or manual setup, then gesture mapping.
   Timing constants are at the top.
 - `app/kiosk/Screens.tsx` — the hub, team, brochure and contact screens. `Model3D.tsx` renders the earbud.
+- `app/kiosk/Keyboard.tsx` — the on-screen keyboard and "type on your phone" panel; `app/type/[code]` is the phone's
+  form and `app/api/handoff/[code]` passes its details to the kiosk.
 
 The hand model ships in `public/models/`, and `npm run dev` / `npm run build` copy the MediaPipe WASM runtime into
 `public/mediapipe/`, so the kiosk works without internet once built (expo Wi-Fi is unreliable).

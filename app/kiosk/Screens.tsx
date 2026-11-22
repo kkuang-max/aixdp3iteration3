@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState, type FormEvent,
 import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
 import { SAMPLE_GESTURE_TEXT, SAMPLE_PART_NAMES, type GestureText } from "@/lib/gestureText";
 import type { HoldState } from "./Kiosk";
+import { TypingPanel } from "./Keyboard";
 import { type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { matchPart, type PublishedDemo } from "@/lib/published";
 import Model3D from "./Model3D";
@@ -71,22 +72,22 @@ const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.t
 const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null; frozen?: boolean }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; glow: readonly PartId[]; accent: string; rowPart?: string | null; zoomPart?: string | null; interactive?: boolean; paused?: boolean; frozen?: boolean }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
   if (demo?.model) {
     // Only How it works and Specs light or move parts; other topics show the whole model turning.
     const mapping = props.interactive ? demo.mappings.find((m) => m.sectionId === props.topicId) : undefined;
-    // A row the visitor points at / swiped to wins over the topic's mapped part.
-    const part = props.rowPart ?? null; // only a part the visitor selects changes the look
-    const mode = !props.interactive ? "Slow turn" : props.rowPart ? (props.topicId === "how" ? "Explode apart" : "Highlight") : (mapping?.mode ?? "Highlight");
+    // Hovering only lights a part up; nothing moves. Zooming in on a part turns the rest see-through.
+    const part = props.rowPart ?? null;
+    const mode = !props.interactive ? "Slow turn" : (mapping?.mode ?? "Highlight");
     if (file && failed !== file.data) {
       return (
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} frozen={props.frozen} />
+            <LiveModel name={file.name} data={file.data} part={props.zoomPart ?? null} glow={part} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} frozen={props.frozen} />
           </div>
         </>
       );
@@ -103,7 +104,7 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
     );
   }
   if (demo) return <NoModel />;
-  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} paused={props.paused} pull={props.pull as PartId | null} />;
+  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} glow={props.glow} interactive={props.interactive} paused={props.paused} />;
 }
 
 /** The portal's demo has no 3D model yet: say so instead of showing the sample earbud. */
@@ -165,10 +166,11 @@ export function Hub(props: {
   // Zoomed in on a part: that part stays lit; otherwise what's pointed at.
   const zoomPart = interactive && props.hold.zoomed ? props.hold.zoomPart : null;
   const litPart = zoomPart ?? hoverPart ?? (active ? rowPart(active) : null);
-  const highlight = interactive && !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : NO_PARTS;
+  const samplePart = (id: string | null) => (interactive && !demo?.model && id && id in ONE_PART ? ONE_PART[id as PartId] : NO_PARTS);
+  // Pointing lights a part up; only a zoom turns the rest see-through.
+  const highlight = samplePart(zoomPart);
+  const glow = zoomPart ? NO_PARTS : samplePart(litPart);
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
-  // Hold and pinch: only parts on How it works / Specs pull out and zoom; elsewhere holding just stops the spin.
-  const pulled = zoomPart ?? (interactive && props.hold.holding ? props.hold.part : null);
   // A published demo shows only what the business wrote (nothing is made up); before anything is published, the
   // built-in Orbit Earbuds example.
   const gestureText: GestureText = demo ? (demo.gestureText ?? { whole: "", parts: {} }) : SAMPLE_GESTURE_TEXT;
@@ -221,7 +223,7 @@ export function Hub(props: {
         data-zoomed={zoomPart ? "" : undefined}
         style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: "0 0" }}
       >
-        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} pull={pulled} frozen={!!zoomPart} />
+        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} glow={glow} rowPart={litPart} zoomPart={zoomPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} frozen={!!zoomPart} />
       </div>
       </div>
 
@@ -375,50 +377,143 @@ function DetailsForm(props: {
   className?: string;
   /** Leave contact info: one "mode of contact" field that takes an email address or a phone number. */
   anyContact?: boolean;
+  /** Which request this is, for the "type on your phone" form. */
+  kind: "team" | "brochure" | "contact";
 }) {
   const s = props.session;
   const [emailError, setEmailError] = useState(false);
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
+  // The field being typed into with the on-screen keyboard (null: keyboard closed).
+  const [active, setActive] = useState<"name" | "email" | "company" | "questions" | null>(null);
+  const order: ("name" | "email" | "company" | "questions")[] = ["name", "email", "company", ...(props.questions ? (["questions"] as const) : [])];
+  const send = () => {
     const v = s.email.trim();
     if (!(EMAIL_RE.test(v) || (props.anyContact && isPhone(v)))) {
       setEmailError(true);
-      return;
+      setActive("email");
+      return false;
     }
+    setActive(null);
     props.onSubmit();
+    return true;
   };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    send();
+  };
+
+  // Type on your phone: a one-time code for this form; the kiosk checks every 2 s whether the phone has sent details.
+  const [code] = useState(() => Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("") + Date.now().toString(36));
+  const [phoneOk, setPhoneOk] = useState(false);
+  const submitRef = useRef(props.onSubmit);
+  const changeRef = useRef(props.onChange);
+  useEffect(() => {
+    submitRef.current = props.onSubmit;
+    changeRef.current = props.onChange;
+  });
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = async () => {
+      try {
+        const res = await fetch(`/api/handoff/${code}`, { cache: "no-store" });
+        if (res.status === 503) return; // not available on this deployment: keyboard only
+        if (!stop) setPhoneOk(true);
+        const json = await res.json();
+        if (json.details && !stop) {
+          const d = json.details as { name: string; email: string; company: string; questions: string };
+          changeRef.current({ name: d.name, email: d.email, company: d.company, questions: d.questions });
+          setActive(null);
+          setTimeout(() => submitRef.current(), 0); // the session has the details now
+          return;
+        }
+      } catch {
+        /* offline: try again */
+      }
+      if (!stop) timer = setTimeout(check, 2000);
+    };
+    check();
+    return () => { stop = true; clearTimeout(timer); };
+  }, [code]);
+  const phoneUrl = phoneOk && typeof window !== "undefined" ? `${window.location.origin}/type/${code}?k=${props.kind}` : null;
+
+  const fieldValue = (f: NonNullable<typeof active>) => (f === "name" ? s.name : f === "email" ? s.email : f === "company" ? s.company : s.questions);
+  const setField = (f: NonNullable<typeof active>, v: string) => {
+    if (f === "email") setEmailError(false);
+    props.onChange({ [f]: v } as Partial<Session>);
+  };
+  const next = () => {
+    const i = active ? order.indexOf(active) : -1;
+    if (i >= 0 && i < order.length - 1) setActive(order[i + 1]);
+    else send();
+  };
+  const labels = { name: "Your name", email: props.anyContact ? "Mode of contact" : "Your email", company: "Company", questions: "Your questions" };
+  // Picking a field (holding a hand over it, a tap or a click) opens the keyboard for it. inputMode "none" keeps a
+  // tablet's own keyboard from popping up over ours; a real keyboard still types as usual.
+  const pick = (f: NonNullable<typeof active>) => ({
+    "data-dwell": DWELL_BUTTON_MS,
+    "data-active": active === f ? "" : undefined,
+    inputMode: "none" as const,
+    onFocus: () => setActive(f),
+    onClick: () => setActive(f),
+  });
+
   return (
     <form className={`${styles.formCard} ${props.className ?? ""}`} onSubmit={submit} noValidate>
       {props.heading && <span className={styles.formHeading}>{props.heading}</span>}
       <label htmlFor="lead-name" className={styles.leadCardTitle}>TYPE YOUR NAME</label>
-      <input id="lead-name" type="text" placeholder={props.anyContact ? "first name, last name" : "[Your name]"} autoComplete="off" className={styles.input} value={s.name} onChange={(e) => props.onChange({ name: e.target.value })} />
+      <input id="lead-name" type="text" placeholder="first name, last name" autoComplete="off" className={styles.input} value={s.name} onChange={(e) => props.onChange({ name: e.target.value })} {...pick("name")} />
       <label htmlFor="lead-email" className={styles.leadCardTitle}>{props.anyContact ? "MODE OF CONTACT" : "TYPE YOUR EMAIL"}</label>
       <input
         id="lead-email"
-        type={props.anyContact ? "text" : "email"}
-        inputMode={props.anyContact ? "email" : undefined}
-        placeholder={props.anyContact ? "name@example.com or (XXX-XXX-XXXX)" : "you@company.com"}
+        type="text"
+        placeholder={props.anyContact ? "name@example.com or (XXX-XXX-XXXX)" : "name@example.com"}
         autoComplete="off"
         className={styles.input}
         aria-invalid={emailError || undefined}
         value={s.email}
-        onChange={(e) => {
-          setEmailError(false);
-          props.onChange({ email: e.target.value });
-        }}
+        onChange={(e) => setField("email", e.target.value)}
+        {...pick("email")}
       />
       <label htmlFor="lead-company" className={styles.inputLabel}>COMPANY (OPTIONAL)</label>
-      <input id="lead-company" type="text" placeholder={props.anyContact ? "[company]" : "[Company]"} autoComplete="off" className={`${styles.input} ${styles.inputSmall}`} value={s.company} onChange={(e) => props.onChange({ company: e.target.value })} />
+      <input id="lead-company" type="text" placeholder="company" autoComplete="off" className={`${styles.input} ${styles.inputSmall}`} value={s.company} onChange={(e) => props.onChange({ company: e.target.value })} {...pick("company")} />
       {props.questions && (
         <>
           <label htmlFor="lead-questions" className={styles.inputLabel}>LET US KNOW IF YOU HAVE ANY SPECIFIC QUESTIONS</label>
-          <textarea id="lead-questions" placeholder="Type here" className={`${styles.input} ${styles.textarea}`} value={s.questions} onChange={(e) => props.onChange({ questions: e.target.value })} />
+          <textarea id="lead-questions" placeholder="Type here" className={`${styles.input} ${styles.textarea}`} value={s.questions} onChange={(e) => props.onChange({ questions: e.target.value })} {...pick("questions")} />
         </>
       )}
-      <button type="submit" className={styles.submitBtn}>
+      {!active && (
+        <button type="button" className={styles.phoneLink} data-dwell={DWELL_BUTTON_MS} onClick={() => setActive("name")}>
+          <KeyboardIcon /> {phoneOk ? "TYPE ON YOUR PHONE OR THE SCREEN" : "OPEN THE KEYBOARD"}
+          <span className={styles.dwellBar} aria-hidden="true" />
+        </button>
+      )}
+      <button type="submit" className={styles.submitBtn} data-dwell={DWELL_BUTTON_MS}>
         {emailError ? (props.anyContact ? "CHECK THE EMAIL OR PHONE NUMBER" : "CHECK THE EMAIL ADDRESS") : <><SendIcon /> SUBMIT</>}
+        <span className={styles.dwellBar} aria-hidden="true" />
       </button>
+      {active && (
+        <TypingPanel
+          key={active}
+          kind={active === "email" ? (props.anyContact ? "contact" : "email") : active}
+          label={labels[active]}
+          value={fieldValue(active)}
+          onChange={(v) => setField(active, v)}
+          onNext={next}
+          onClose={() => setActive(null)}
+          name={s.name}
+          phoneUrl={phoneUrl}
+        />
+      )}
     </form>
+  );
+}
+
+function KeyboardIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+    </svg>
   );
 }
 
@@ -490,7 +585,7 @@ export function Team(props: SendProps & { accent: string }) {
       <div className={styles.sendColumn}>
         <BadgeCard onScanned={() => sent("badge")} />
         <span className={styles.orText}>OR</span>
-        <DetailsForm session={props.session} onChange={props.onChange} onSubmit={() => sent("email")} />
+        <DetailsForm kind="team" session={props.session} onChange={props.onChange} onSubmit={() => sent("email")} />
       </div>
     </>
   );
@@ -532,7 +627,7 @@ export function Brochure(props: SendProps & { accent: string }) {
       <div className={styles.sendColumn}>
         <BadgeCard onScanned={() => sent("badge")} />
         <span className={styles.orText}>OR</span>
-        <DetailsForm session={props.session} onChange={props.onChange} onSubmit={() => sent("email")} />
+        <DetailsForm kind="brochure" session={props.session} onChange={props.onChange} onSubmit={() => sent("email")} />
       </div>
     </>
   );
@@ -552,7 +647,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
         eyebrow={named(productName, "LEAVE CONTACT INFO")}
         title="THANKS, WE’LL BE IN TOUCH"
         body={`Your details have been sent to the ${productName ? `${titleCase(productName)} team` : "team"}. They’ll be in touch about your inquiry.`}
-        note={`Your contact information will be deleted after ${demo?.retentionDays ? `${demo.retentionDays} day${demo.retentionDays === 1 ? "" : "s"}` : "[X days]"}.`}
+        note={`Your contact information will be deleted after ${demo?.retentionDays ? `${demo.retentionDays} day${demo.retentionDays === 1 ? "" : "s"}` : demo ? "[X days]" : "30 days"}.`}
         onDone={props.onBack}
         accent={props.accent}
       />
@@ -588,6 +683,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
         </div>
       </div>
       <DetailsForm
+        kind="contact"
         session={props.session}
         onChange={props.onChange}
         onSubmit={() => sent("email")}

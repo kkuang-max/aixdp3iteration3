@@ -16,19 +16,19 @@ export const liveNearest = new WeakMap<HTMLCanvasElement, (x: number, y: number)
 /** Where a named part is on screen right now (for centring a zoom on it). */
 export const liveBox = new WeakMap<HTMLCanvasElement, (part: string) => { l: number; t: number; r: number; b: number } | null>();
 
-type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; pull?: string | null; frozen?: boolean };
+type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; glow?: string | null; frozen?: boolean };
 
 const SIZE = 460; // CSS px, the same box as the sample earbud
 const SWAY_S = 14; // one sway cycle, as the sample earbud
 const EASE = 3.5; // how fast explode / camera moves settle (per second)
 
-export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, pull = null, frozen = false }: Props) {
+export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, glow = null, frozen = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const target = useRef({ part, mode, paused, pull, frozen });
+  const target = useRef({ part, mode, paused, glow, frozen });
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    target.current = { part, mode, paused, pull, frozen };
-  }, [part, mode, paused, pull, frozen]);
+    target.current = { part, mode, paused, glow, frozen };
+  }, [part, mode, paused, glow, frozen]);
   const failRef = useRef(onFail);
   useEffect(() => {
     failRef.current = onFail;
@@ -109,6 +109,7 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
           lit: list.map((mat) => {
             const c = mat.clone() as import("three").MeshStandardMaterial;
             if ("emissive" in c && c.emissive) { c.emissive = accentColor.clone(); c.emissiveIntensity = 0.45; }
+            else if ("color" in c && c.color) c.color = (c.color as import("three").Color).clone().lerp(accentColor, 0.45);
             return c;
           }),
           dim: list.map((mat) => {
@@ -120,13 +121,15 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
           }),
         });
       }
-      let shownPart: string | null | undefined;
-      const applyLook = (lit: string | null) => {
-        const litMeshes = new Set(info.find((p) => p.name === lit)?.meshes ?? []);
+      let shownLook: string | undefined;
+      const one = (list: import("three").Material[], normal: import("three").Material | import("three").Material[]) => (Array.isArray(normal) ? list : list[0]);
+      // Zoomed in on a part: it keeps its own look and everything else goes see-through. Pointed at: it lights up.
+      const applyLook = (focus: string | null, glowing: string | null) => {
+        const focusMeshes = new Set(info.find((p) => p.name === focus)?.meshes ?? []);
+        const glowMeshes = new Set(info.find((p) => p.name === glowing)?.meshes ?? []);
         for (const [m, look] of looks) {
-          if (!litMeshes.size) m.material = look.normal;
-          // The selected part keeps its own look; everything else goes see-through.
-          else m.material = litMeshes.has(m) ? look.normal : (Array.isArray(look.normal) ? look.dim : look.dim[0]);
+          if (focusMeshes.size) m.material = focusMeshes.has(m) ? look.normal : one(look.dim, look.normal);
+          else m.material = glowMeshes.has(m) ? one(look.lit, look.normal) : look.normal;
         }
       };
 
@@ -147,13 +150,14 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
         const dt = Math.min((now - last) / 1000, 0.1);
         last = now;
         const k = 1 - Math.exp(-dt * EASE);
-        const { part: want, mode: how, paused: hold, pull: held, frozen } = target.current;
+        const { part: want, mode: how, paused: hold, glow: glowing, frozen } = target.current;
         const litName = want && want !== "Whole product" && want !== "None" ? want : null;
         const focus = info.find((p) => p.name === litName);
+        const glowName = glowing && glowing !== "Whole product" && glowing !== "None" ? glowing : null;
 
-        if (litName !== shownPart) {
-          applyLook(litName);
-          shownPart = litName;
+        if (`${litName}|${glowName}` !== shownLook) {
+          applyLook(litName, glowName);
+          shownLook = `${litName}|${glowName}`;
         }
         // Zoomed in: everything stays exactly where it is, so the part the page centred doesn't drift.
         if (frozen) {
@@ -161,14 +165,10 @@ export default function LiveModel({ name, data, part, mode, accent, onFail, paus
           return;
         }
 
-        // Explode
-        const wantExplode = how === "Explode apart" ? 1 : how === "Put back together" ? 0 : focus ? 0.25 : 0;
+        // Explode (set by the topic; pointing at a part never moves anything)
+        const wantExplode = how === "Explode apart" ? 1 : 0;
         explode += (wantExplode - explode) * k;
-        // A part the visitor holds is pulled out further than the rest.
-        for (const p of info) {
-          p.pulled += ((p.name === held ? 1 : 0) - p.pulled) * k;
-          p.node.position.copy(p.home).addScaledVector(p.away, explode + p.pulled * 0.9);
-        }
+        for (const p of info) p.node.position.copy(p.home).addScaledVector(p.away, explode);
 
         // Turn: slow full turn, or a gentle sway like the sample earbud
         // Holding over the model stops it turning; it picks up again from where it stopped.

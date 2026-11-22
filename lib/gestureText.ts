@@ -11,16 +11,16 @@ export type GestureText = { whole: string; parts: Record<string, PartText> };
 
 export const EMPTY_PART_TEXT: PartText = { hover: "", pinch: "", specs: "" };
 
-/** The built-in Orbit Earbuds example, shown only when nothing has been published. Keys are the sample's part ids. */
+/** The built-in Orbit Earbuds example (dummy values), shown only when nothing has been published. Keys are part ids. */
 export const SAMPLE_GESTURE_TEXT: GestureText = {
   whole: "Wireless earbuds that tune out the room.",
   parts: {
-    shell: { hover: "Holds it all together", pinch: "Shaped to sit flush in the ear, with touch controls on the stem.", specs: "Material [Material] · Touch controls" },
+    shell: { hover: "Holds it all together", pinch: "Shaped to sit flush in the ear, with touch controls on the stem.", specs: "Recycled polycarbonate · Touch controls" },
     tip: { hover: "Seals the sound in", pinch: "Soft silicone in three sizes creates the seal noise cancelling needs.", specs: "Sizes S · M · L" },
-    driver: { hover: "Makes the sound", pinch: "A [XX] mm driver tuned for clear voices and full bass.", specs: "Size [XX] mm · [Dynamic]" },
-    battery: { hover: "Lasts all day", pinch: "[X] hours per charge, and the case adds [X] more.", specs: "[X] h · [X] h with case" },
-    board: { hover: "Cancels the noise", pinch: "Listens to the room and plays back the opposite sound.", specs: "[Chip name] · Adaptive" },
-    mic: { hover: "Picks out your voice", pinch: "[X] microphones focus on your voice and filter out wind.", specs: "[X] mics per bud" },
+    driver: { hover: "Makes the sound", pinch: "An 11 mm driver tuned for clear voices and full bass.", specs: "11 mm · Dynamic" },
+    battery: { hover: "Lasts all day", pinch: "8 hours per charge, and the case adds 20 more.", specs: "8 h · 28 h with case" },
+    board: { hover: "Cancels the noise", pinch: "Listens to the room and plays back the opposite sound.", specs: "Orbit A1 chip · Adaptive" },
+    mic: { hover: "Picks out your voice", pinch: "Three microphones focus on your voice and filter out wind.", specs: "3 mics per bud" },
   },
 };
 
