@@ -65,7 +65,7 @@ const EDGE_TIPS = {
 } as const;
 type Edge = keyof typeof EDGE_TIPS;
 const edgeOf = (x: number, y: number): Edge | null =>
-  y > 0.78 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
+  y > 0.85 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
 
 export type HoldState = { holding: boolean; part: string | null; zoomed: boolean; zoomPart: string | null; origin: string; shift: [number, number]; scale: number };
 const NO_HOLD: HoldState = { holding: false, part: null, zoomed: false, zoomPart: null, origin: "50% 50%", shift: [0, 0], scale: 1.6 };
@@ -250,7 +250,7 @@ export default function Kiosk() {
     zoomShift: [0, 0] as [number, number],
     zoomScale: 1.6,
     spread: -1, // smoothed thumb–index spread, in hand sizes (-1 = not measured yet)
-    spreadHist: [] as [number, number, number][], // recent [time, spread, hand size], to spot an opening or closing pinch
+    spreadHist: [] as [number, number, number, number, number][], // recent [time, spread, hand size, x, y], to spot an opening or closing pinch
     palm: null as [number, number, number] | null, // last [time, x, y] of the palm, for its speed
     shutSince: 0, // when the fingers came together while zoomed in (0 = not pinched in)
     pinchQuiet: 0,
@@ -630,14 +630,20 @@ export default function Kiosk() {
       const prevPalm = s.palm;
       s.palm = [now, hand.palmX, hand.palmY];
       const speed = prevPalm ? Math.hypot(hand.palmX - prevPalm[1], hand.palmY - prevPalm[2]) / Math.max((now - prevPalm[0]) / 1000, 1e-3) : 0;
-      const steady = speed < PINCH_MAX_SPEED && !edgeOf(hand.palmX, hand.palmY);
+      // In view: the camera still sees the wrist, thumb and fingertip. (Not the palm-based edge warning: pointing at
+      // the bottom of the model puts the palm low in the camera's view while the hand is still tracked fine.)
+      const inView = !!hand.landmarks?.length && [0, 4, 8].every((i) => {
+        const p = hand.landmarks[i];
+        return p && p.y > 0.02 && p.y < 0.98 && p.x > 0.02 && p.x < 0.98;
+      });
+      const steady = speed < PINCH_MAX_SPEED && inView;
       if (lm?.length >= 10 && !swiping) {
         const d = (a: number, b: number) => Math.hypot((lm[a].x - lm[b].x) * hand.aspect, lm[a].y - lm[b].y);
         const size = d(0, 9);
         if (size > 1e-3 && steady) {
           const raw = d(4, 8) / size;
           s.spread = s.spread < 0 ? raw : s.spread * 0.5 + raw * 0.5;
-          s.spreadHist.push([now, s.spread, size]);
+          s.spreadHist.push([now, s.spread, size, s.x, s.y]);
           while (s.spreadHist.length && now - s.spreadHist[0][0] > PINCH_WINDOW_MS) s.spreadHist.shift();
           const sizes = s.spreadHist.map((h) => h[2]);
           const turning = Math.max(...sizes) / Math.min(...sizes) > PINCH_MAX_TURN;
@@ -646,7 +652,11 @@ export default function Kiosk() {
             const opened = s.spread - Math.min(...vals);
             const closed = Math.max(...vals) - s.spread;
             let fired = false;
-            if (!s.zoomed && opened > PINCH_OPEN && s.spread > PINCH_OPEN_AT) fired = zoomIn(s.x, s.y);
+            if (!s.zoomed && opened > PINCH_OPEN && s.spread > PINCH_OPEN_AT) {
+              // Zoom where the pinch started: spreading the fingers moves the fingertip (and the pointer) away.
+              const start = s.spreadHist.reduce((a, h) => (h[1] < a[1] ? h : a));
+              fired = zoomIn(start[3], start[4]);
+            }
             else if (s.zoomed) {
               // Pinched in: the fingers came together and stayed together, with the hand steady and in view.
               if (s.spread < PINCH_SHUT_AT && (s.shutSince || closed > PINCH_CLOSE)) {
