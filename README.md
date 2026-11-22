@@ -184,6 +184,18 @@ part on the model; pointing at a part of the model lights that part and every ro
 Bluetooth and Works with). In swipe mode, swiping up or down steps through the rows one at a time (stopping at the first
 and last). With an uploaded model, each row is matched to the model part with the closest name.
 
+**Typing without a keyboard.** On Talk to our team, Get digital brochure and Leave contact info, picking a field
+(holding a hand over it, a tap or a click), or **Type on your phone or the screen**, opens a panel on the left:
+
+- **Type on your phone:** a QR code opens the same form on the visitor's own phone (`/type/<code>`). When they press
+  Send there, the kiosk picks the details up within a couple of seconds and sends them like any other lead. The details
+  are held for at most 15 minutes and deleted as soon as the kiosk reads them (needs Supabase; without it, only the
+  keyboard shows). Note: Vercel preview links are behind Vercel's login, so phones need the production address.
+- **On-screen keyboard:** keys are pressed by holding a hand over them (about 0.65 s; Delete repeats while held), a tap
+  or a click. Email shortcuts (@ . _ - .com @gmail @outlook), suggestions (email addresses from the name typed, email
+  domains, names and common words), a number pad for phone numbers (opens by itself when a phone number is started,
+  or with 123), and Next to move to the next field.
+
 ## Hand interaction
 
 Two hand modes, switched with **C + S** (see the shortcuts below):
@@ -352,6 +364,8 @@ kiosk keeps the last published demo until you publish again.
 - `app/business/page.tsx` — business portal (`/business`): auto setup (default) or manual setup, then gesture mapping.
   Timing constants are at the top.
 - `app/kiosk/Screens.tsx` — the hub, team, brochure and contact screens. `Model3D.tsx` renders the earbud.
+- `app/kiosk/Keyboard.tsx` — the on-screen keyboard and "type on your phone" panel; `app/type/[code]` is the phone's
+  form and `app/api/handoff/[code]` passes its details to the kiosk.
 
 The hand model ships in `public/models/`, and `npm run dev` / `npm run build` copy the MediaPipe WASM runtime into
 `public/mediapipe/`, so the kiosk works without internet once built (expo Wi-Fi is unreliable).

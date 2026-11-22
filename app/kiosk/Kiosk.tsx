@@ -799,10 +799,18 @@ export default function Kiosk() {
 
       // Held long enough over something: press it.
       if (s.dwellEl && !s.dwellFired && now - s.dwellSince >= (Number(s.dwellEl.dataset.dwell) || 1000)) {
-        s.dwellFired = true;
-        s.dwellEl.removeAttribute("data-dwelling");
-        cursorRef.current?.removeAttribute("data-dwelling");
-        s.dwellEl.click();
+        const el = s.dwellEl;
+        if (el.hasAttribute("data-dwell-repeat")) {
+          // Keys like Delete keep pressing while the hand stays on them (a little slower after the first press).
+          s.dwellSince = now + 250;
+          el.removeAttribute("data-dwelling");
+          requestAnimationFrame(() => { if (ix.current.dwellEl === el) el.setAttribute("data-dwelling", ""); });
+        } else {
+          s.dwellFired = true;
+          el.removeAttribute("data-dwelling");
+          cursorRef.current?.removeAttribute("data-dwelling");
+        }
+        el.click();
       }
 
       const idle = now - s.lastActive;
