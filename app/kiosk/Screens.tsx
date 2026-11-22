@@ -72,22 +72,22 @@ const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.t
 const named = (name: string, rest: string) => (name ? `${name} / ${rest}` : rest);
 
 /** The product in the middle of the hub: the uploaded model's picture for this topic, or the sample earbud in 3D. */
-function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; accent: string; rowPart?: string | null; interactive?: boolean; paused?: boolean; pull?: string | null; frozen?: boolean }) {
+function ProductModel(props: { topicId: string; explode: number; highlight: readonly PartId[]; glow: readonly PartId[]; accent: string; rowPart?: string | null; zoomPart?: string | null; interactive?: boolean; paused?: boolean; frozen?: boolean }) {
   const demo = useContext(DemoContext);
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
   if (demo?.model) {
     // Only How it works and Specs light or move parts; other topics show the whole model turning.
     const mapping = props.interactive ? demo.mappings.find((m) => m.sectionId === props.topicId) : undefined;
-    // A row the visitor points at / swiped to wins over the topic's mapped part.
-    const part = props.rowPart ?? null; // only a part the visitor selects changes the look
-    const mode = !props.interactive ? "Slow turn" : props.rowPart ? (props.topicId === "how" ? "Explode apart" : "Highlight") : (mapping?.mode ?? "Highlight");
+    // Hovering only lights a part up; nothing moves. Zooming in on a part turns the rest see-through.
+    const part = props.rowPart ?? null;
+    const mode = !props.interactive ? "Slow turn" : (mapping?.mode ?? "Highlight");
     if (file && failed !== file.data) {
       return (
         <>
           <div className={styles.modelShadow} />
           <div className={styles.modelPicture}>
-            <LiveModel name={file.name} data={file.data} part={part ?? null} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} pull={props.pull} frozen={props.frozen} />
+            <LiveModel name={file.name} data={file.data} part={props.zoomPart ?? null} glow={part} mode={mode} accent={props.accent} onFail={() => setFailed(file.data)} paused={props.paused} frozen={props.frozen} />
           </div>
         </>
       );
@@ -104,7 +104,7 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
     );
   }
   if (demo) return <NoModel />;
-  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} interactive={props.interactive} paused={props.paused} pull={props.pull as PartId | null} />;
+  return <Model3D geo={MODEL} accent={props.accent} explode={props.explode} highlight={props.highlight} glow={props.glow} interactive={props.interactive} paused={props.paused} />;
 }
 
 /** The portal's demo has no 3D model yet: say so instead of showing the sample earbud. */
@@ -166,10 +166,11 @@ export function Hub(props: {
   // Zoomed in on a part: that part stays lit; otherwise what's pointed at.
   const zoomPart = interactive && props.hold.zoomed ? props.hold.zoomPart : null;
   const litPart = zoomPart ?? hoverPart ?? (active ? rowPart(active) : null);
-  const highlight = interactive && !demo?.model && litPart && litPart in ONE_PART ? ONE_PART[litPart as PartId] : NO_PARTS;
+  const samplePart = (id: string | null) => (interactive && !demo?.model && id && id in ONE_PART ? ONE_PART[id as PartId] : NO_PARTS);
+  // Pointing lights a part up; only a zoom turns the rest see-through.
+  const highlight = samplePart(zoomPart);
+  const glow = zoomPart ? NO_PARTS : samplePart(litPart);
   const rowLit = (r: (typeof t.rows)[number], i: number) => interactive && (hoverPart ? rowPart(r) === hoverPart : i === props.activeRow);
-  // Hold and pinch: only parts on How it works / Specs pull out and zoom; elsewhere holding just stops the spin.
-  const pulled = zoomPart ?? (interactive && props.hold.holding ? props.hold.part : null);
   // A published demo shows only what the business wrote (nothing is made up); before anything is published, the
   // built-in Orbit Earbuds example.
   const gestureText: GestureText = demo ? (demo.gestureText ?? { whole: "", parts: {} }) : SAMPLE_GESTURE_TEXT;
@@ -222,7 +223,7 @@ export function Hub(props: {
         data-zoomed={zoomPart ? "" : undefined}
         style={{ transform: zoomPart ? `translate(${props.hold.shift[0]}px, ${props.hold.shift[1]}px) scale(${props.hold.scale})` : "none", transformOrigin: "0 0" }}
       >
-        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} rowPart={litPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} pull={pulled} frozen={!!zoomPart} />
+        <ProductModel topicId={t.id} accent={props.accent} explode={props.explode} highlight={highlight} glow={glow} rowPart={litPart} zoomPart={zoomPart} interactive={interactive} paused={props.hold.holding || !!zoomPart} frozen={!!zoomPart} />
       </div>
       </div>
 

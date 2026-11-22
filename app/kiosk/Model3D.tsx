@@ -12,10 +12,10 @@ export default function Model3D<Id extends string>(props: {
   highlight: readonly Id[];
   interactive?: boolean; // parts can be pointed at (Kiosk reads data-model-part)
   paused?: boolean; // the visitor is holding over it: stop turning
-  pull?: Id | null; // the part held: pulled out
+  glow?: readonly Id[]; // parts the visitor points at: lit up
 }) {
-  const { geo, accent, explode, highlight, pull } = props;
-  const slices = useMemo(() => buildModel({ geo, w: 460, accent, explode, highlight, pull }), [geo, accent, explode, highlight, pull]);
+  const { geo, accent, explode, highlight, glow } = props;
+  const slices = useMemo(() => buildModel({ geo, w: 460, accent, explode, highlight, glow }), [geo, accent, explode, highlight, glow]);
   return (
     <>
       <div className={styles.modelShadow} />

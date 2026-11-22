@@ -45,7 +45,7 @@ export function buildModel<Id extends string>(o: {
   accent: string;
   explode: number; // 0 assembled → 1 exploded
   highlight: readonly Id[];
-  pull?: Id | null; // a part held by the visitor: pulled further out than the rest
+  glow?: readonly Id[]; // parts the visitor points at: lit up in the accent colour (nothing moves)
 }): ModelSlice[] {
   const G = o.geo;
   const k = o.w / G.vbw;
@@ -58,7 +58,7 @@ export function buildModel<Id extends string>(o: {
     const z = -zm + step * i;
     const paths: ModelPath[] = [];
     for (const p of G.parts) {
-      const e = o.pull === p.id ? o.explode + 0.55 : o.explode;
+      const e = o.explode;
       const dz = z - ((p.zc ?? 0) + (p.ze ?? 0) * e);
       if (Math.abs(dz) > p.hd) continue;
       const front = dz + step > p.hd;
@@ -69,11 +69,12 @@ export function buildModel<Id extends string>(o: {
       const [light, dark] = TONES[p.tone ?? "pearl"];
       const shade = front ? light : mix(dark, light, 0.25 + 0.6 * ((z + zm) / (2 * zm)));
       // The selected part keeps its own colours; when something is selected, everything else goes see-through.
-      const c = shade;
+      const lit = !!o.glow?.includes(p.id);
+      const c = lit ? mix(shade, o.accent, 0.55) : shade;
       const op = !on && o.highlight.length ? 0.16 : 1;
       let n = 0;
       const push = (x: Omit<ModelPath, "key" | "d" | "tf" | "part"> & { tf?: string }) => paths.push({ d: p.d, tf, ...x, part: p.id, key: `${p.id}-${n++}` });
-      push({ fill: c, stroke: front ? mix(light, dark, 0.35) : c, sw: front ? 1.2 : 2.4, op });
+      push({ fill: c, stroke: lit && front ? o.accent : front ? mix(light, dark, 0.35) : c, sw: front ? (lit ? 2 : 1.2) : 2.4, op });
       if (front && p.tp != null) {
         const tp = p.tp;
         push({

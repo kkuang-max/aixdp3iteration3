@@ -1112,6 +1112,7 @@ video.camVideo {
 .modelWrap[data-interactive] .slice path {
   pointer-events: visiblePainted;
   cursor: pointer;
+  transition: fill 0.2s ease, stroke 0.2s ease, opacity 0.25s ease;
 }
 
 .modelPicture:has([data-live-model][data-ready]) {

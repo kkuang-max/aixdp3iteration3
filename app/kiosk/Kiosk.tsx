@@ -36,6 +36,8 @@ const TAU_EXPLODE = 0.35; // easing time constant (s) for the earbud coming apar
 
 // Hold and pinch on the 3D model.
 const HOLD_MS = { hand: 300, mouse: 120 }; // resting over the model this long stops it turning
+const PART_SETTLE_MS = [220, 90]; // hand, mouse: stay on a part this long before it lights up
+const PART_LEAVE_MS = [350, 150]; // hand, mouse: off the parts this long before the light goes out
 const HOLD_GRACE_MS = 450; // keep holding through brief slips off the model
 // Pinch: thumb–index spread, in hand sizes (wrist to middle knuckle). Opening by this much within PINCH_WINDOW_MS zooms
 // in; closing by this much zooms back out. Zoom stays on until then.
@@ -230,6 +232,9 @@ export default function Kiosk() {
     dwellFired: false,
     activeRow: null as number | null,
     modelPart: null as string | null,
+    partCand: null as string | null, // the part under the pointer, before it has settled
+    partSince: 0,
+    partTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     rowFromHover: false,
     edge: null as Edge | null,
     edgeSince: 0,
@@ -483,9 +488,23 @@ export default function Kiosk() {
     // A part of the model under the pointer (sample earbud slices, or the uploaded model's 3D view).
     let part: string | null = hit?.closest("[data-model-part]")?.getAttribute("data-model-part") ?? null;
     if (!part && hit instanceof HTMLCanvasElement && hit.hasAttribute("data-live-model")) part = livePickers.get(hit)?.(x, y) ?? null;
-    if (part !== s.modelPart) {
+    // Steady the highlight: a new part (or leaving the parts) only takes over once the pointer has stayed on it a
+    // moment, so a hand wobbling on the edge between two parts doesn't make them flicker.
+    if (part !== s.partCand) {
+      s.partCand = part;
+      s.partSince = now;
+    }
+    if (part !== s.modelPart && now - s.partSince >= (part ? PART_SETTLE_MS : PART_LEAVE_MS)[source === "hand" ? 0 : 1]) {
       s.modelPart = part;
       setModelPart(part);
+    } else if (part !== s.modelPart) {
+      clearTimeout(s.partTimer);
+      s.partTimer = setTimeout(() => {
+        if (ix.current.partCand === part && ix.current.modelPart !== part) {
+          ix.current.modelPart = part;
+          setModelPart(part);
+        }
+      }, (part ? PART_SETTLE_MS : PART_LEAVE_MS)[source === "hand" ? 0 : 1] - (now - s.partSince) + 10);
     }
 
     const rowEl = hit?.closest("[data-row]");
@@ -507,6 +526,8 @@ export default function Kiosk() {
       s.activeRow = null;
       setActiveRow(null);
     }
+    clearTimeout(s.partTimer);
+    s.partCand = null;
     if (s.modelPart) {
       s.modelPart = null;
       setModelPart(null);
