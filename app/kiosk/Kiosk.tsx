@@ -72,6 +72,8 @@ const NO_HOLD: HoldState = { holding: false, part: null, zoomed: false, zoomPart
 /** Where the model sits on the 1280×720 stage (matches .modelZone). */
 const MODEL_AREA = { x: 400, y: 70, w: 460, h: 495 };
 /** A zoomed part is centred here and fits inside this box, between the topics and the text (stage px). */
+// A pinch a little outside the model still zooms (into the nearest part). Stage px; less on the left, where the topics are.
+const ZOOM_MARGIN = { l: 40, r: 100, t: 60, b: 70 };
 const ZOOM_CENTER = { x: 630, y: 320 };
 const ZOOM_FIT = { w: 360, h: 400 };
 
@@ -366,11 +368,12 @@ export default function Kiosk() {
     );
   }, []);
   /** Is the point over the model's area (not just one of its parts)? */
-  const overModel = (x: number, y: number) => {
+  const overModel = (x: number, y: number, margin = { l: 0, r: 0, t: 0, b: 0 }) => {
     const zone = document.querySelector("[data-model-zone]");
     if (!zone) return false;
     const r = zone.getBoundingClientRect();
-    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    const k = r.width / MODEL_AREA.w; // stage px → screen px
+    return x >= r.left - margin.l * k && x <= r.right + margin.r * k && y >= r.top - margin.t * k && y <= r.bottom + margin.b * k;
   };
   /** Fit the zoomed part whole in the middle of the screen: scaled so it fills ZOOM_FIT, centred on ZOOM_CENTER. */
   const aimZoom = useCallback(() => {
@@ -394,7 +397,7 @@ export default function Kiosk() {
   /** Zoom in on the part nearest (x, y). Only on the topics whose parts come apart (How it works, Specs). */
   const zoomIn = useCallback((x: number, y: number) => {
     const s = ix.current;
-    if (s.zoomed || s.screen !== "hub" || !PART_TOPICS.has(TOPICS[s.topic].id) || !overModel(x, y)) return false;
+    if (s.zoomed || s.screen !== "hub" || !PART_TOPICS.has(TOPICS[s.topic].id) || !overModel(x, y, ZOOM_MARGIN)) return false;
     const near = nearestPart(x, y);
     if (!near) return false;
     s.zoomed = true;

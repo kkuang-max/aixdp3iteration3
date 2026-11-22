@@ -1518,3 +1518,10 @@ video.camVideo {
   font-size: 22px;
 }
 
+
+/* Phone typing isn't set up on this deployment: the row stays, greyed, so the option is never just missing. */
+.phoneRow[data-off] .phoneQr {
+  background: rgba(255, 255, 255, 0.08);
+  width: 72px;
+  height: 72px;
+}
