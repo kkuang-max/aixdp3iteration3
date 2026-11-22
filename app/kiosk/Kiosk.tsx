@@ -52,6 +52,10 @@ const PINCH_MAX_TURN = 1.45; // hand size changing by more than this within the 
 const PINCH_OPEN_AT = 0.75; // fingers clearly apart (in hand sizes) to count as spread
 const PINCH_SHUT_AT = 0.7; // fingers together (in hand sizes) to count as pinched in
 const PINCH_HOLD_MS = 100; // ...and kept together this long, with the hand still in view
+// The other hand never points, so it can't zoom by accident while aiming: a smaller spread is enough.
+const PINCH_OPEN_OTHER = 0.3;
+const PINCH_OPEN_AT_OTHER = 0.6;
+const OTHER_LOST_MS = 300; // the other hand dropping out of the camera this briefly doesn't restart its pinch
 const WHEEL_STEP = 60; // accumulated wheel / trackpad-pinch delta for one zoom in / out
 const TOUCH_IN = 1.25; // two-finger distance ratio that zooms in on a touchscreen
 const TOUCH_OUT = 0.8;
@@ -123,8 +127,7 @@ const newPinch = (): PinchTrack => ({ spread: -1, hist: [], palm: null, shutSinc
 
 /**
  * One hand's pinch, frame by frame. Calls fire(true, x, y) for a pinch out (zoom in at x, y) and fire(false) for a
- * pinch in. The pointing hand zooms where its pinch started (spreading the fingers moves the fingertip away); the
- * other hand zooms wherever the pointer is.
+ * pinch in. Either hand zooms where the pointer was when the pinch started.
  */
 function pinchStep(
   t: PinchTrack,
@@ -168,8 +171,10 @@ function pinchStep(
   const opened = t.spread - Math.min(...vals);
   const closed = Math.max(...vals) - t.spread;
   if (!zoomed) {
-    if (opened > PINCH_OPEN && t.spread > PINCH_OPEN_AT) {
-      const start = pointing ? t.hist.reduce((a, h) => (h[1] < a[1] ? h : a)) : t.hist[t.hist.length - 1];
+    if (pointing ? opened > PINCH_OPEN && t.spread > PINCH_OPEN_AT : opened > PINCH_OPEN_OTHER && t.spread > PINCH_OPEN_AT_OTHER) {
+      // Where the pointer was when the fingers started opening: spreading moves the fingertip, and people tend to move
+      // the pointing hand a little while the other hand pinches.
+      const start = t.hist.reduce((a, h) => (h[1] < a[1] ? h : a));
       fire(true, start[3], start[4]);
     }
     return;
@@ -320,6 +325,7 @@ export default function Kiosk() {
     // Pinch tracking for the pointing hand and the visitor's other hand (zoom only).
     pinch: [newPinch(), newPinch()] as [PinchTrack, PinchTrack],
     pinchQuiet: 0,
+    otherSeen: 0, // when the visitor's other hand was last in view
     wheelAcc: 0,
     wheelAt: 0,
     touchD0: 0,
@@ -643,7 +649,7 @@ export default function Kiosk() {
       const swipe = teach || !swiping ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
       if (swipe) onSwipe(swipe.dir);
 
-      if (dbg.on) {
+      if (dbg.on && swiping) { // pointing: the pinch line below
         if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
         const miss = swipes.current.miss;
         const text = swiping ? `${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}` : `POINT · ${dbg.stats}`;
@@ -702,8 +708,18 @@ export default function Kiosk() {
         return fired;
       };
       pinchStep(s.pinch[0], hand.landmarks, hand.palmX, hand.palmY, hand.aspect, now, s.x, s.y, s.zoomed, true, fire);
-      if (hand.other) pinchStep(s.pinch[1], hand.other.landmarks, hand.other.palmX, hand.other.palmY, hand.aspect, now, s.x, s.y, s.zoomed, false, fire);
-      else s.pinch[1] = newPinch();
+      if (hand.other) {
+        s.otherSeen = now;
+        pinchStep(s.pinch[1], hand.other.landmarks, hand.other.palmX, hand.other.palmY, hand.aspect, now, s.x, s.y, s.zoomed, false, fire);
+      } else if (now - s.otherSeen > OTHER_LOST_MS) s.pinch[1] = newPinch();
+      if (dbg.on) {
+        const o = hand.other ? `2ND HAND: ZOOM · SPREAD ${s.pinch[1].spread.toFixed(1)}` : hand.otherIgnored ? `2ND HAND IGNORED (${hand.otherIgnored === "far" ? "TOO FAR APART" : "SIZE DIFFERS"})` : "2ND HAND: NONE";
+        const text = `POINT · ${dbg.stats} · SPREAD ${s.pinch[0].spread.toFixed(1)} · ${o}${s.zoomed ? " · ZOOMED" : ""}`;
+        if (text !== dbg.text) {
+          dbg.text = text;
+          setDebug(text);
+        }
+      }
     },
     [onSwipe, pointAt, pointerGone, markPresent, zoomIn, zoomOut],
   );
