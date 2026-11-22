@@ -1078,9 +1078,9 @@ export default function Kiosk() {
   );
 }
 
-/** Only How it works and Specs move the model; every other topic shows it whole. */
+/** How it works and Specs show every part fully apart, the same way; every other topic shows the model whole. */
 function topicExplode(i: number) {
-  return PART_TOPICS.has(TOPICS[i].id) ? TOPICS[i].explode : 0;
+  return PART_TOPICS.has(TOPICS[i].id) ? 1 : 0;
 }
 
 function clearDwell(s: { dwellEl: HTMLElement | null; dwellFired: boolean }) {

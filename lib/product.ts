@@ -85,7 +85,7 @@ export const TOPICS: Topic[] = [
   },
   {
     id: "specs", n: "05", label: "SPECS", short: "Specs",
-    title: "Specs & compatibility.", explode: 0.4, highlight: ["battery"],
+    title: "Specs & compatibility.", explode: 1, highlight: ["battery"],
     rows: [
       { a: "Battery", b: "8 h · 28 h with case", part: "battery" },
       { a: "Bluetooth", b: "5.3 · multipoint", part: "board" },

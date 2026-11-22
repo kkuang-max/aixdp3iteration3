@@ -77,11 +77,10 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
   if (demo?.model) {
-    // Only How it works and Specs light or move parts; other topics show the whole model turning.
-    const mapping = props.interactive ? demo.mappings.find((m) => m.sectionId === props.topicId) : undefined;
     // Hovering only lights a part up; nothing moves. Zooming in on a part turns the rest see-through.
     const part = props.rowPart ?? null;
-    const mode = !props.interactive ? "Slow turn" : (mapping?.mode ?? "Highlight");
+    // How it works and Specs: every part apart, the same way on both. Other topics: the whole model turning.
+    const mode = !props.interactive ? "Slow turn" : "Explode apart";
     if (file && failed !== file.data) {
       return (
         <>
