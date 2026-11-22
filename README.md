@@ -10,8 +10,8 @@ lets visitors ask for a team member, and collects leads. It has two sides:
 - **Customer side (the kiosk):** what expo visitors use, with a hand in front of the camera, touch or a mouse. It shows
   exactly what the business published.
 
-Before anything has been published, the kiosk shows our built-in example, **Orbit Earbuds**. Details we don't have,
-like the brand, booth number and staff names, are bracketed placeholders, e.g. `[BRAND]`, `[X] h`, `[Staff name]`.
+Before anything has been published, the kiosk shows our built-in example, **Orbit Earbuds**, filled with made-up
+dummy values for testing (brand "Lumen Audio", booth 214, specs, staff names); none of it is real.
 
 Prototype v2 builds on Prototype v1 (iteration 3), which started from iteration 2
 ([kkuang-max/p3iteration2](https://github.com/kkuang-max/p3iteration2)), with its full history, and was redesigned
@@ -64,8 +64,8 @@ mouse work too.
   storage (`playform.leads`). A real booth would send them to its CRM. No ticket number, wait time or brochure is
   actually emailed.
 - **"Deleted after [X days]"** is the wording only. Leads aren't deleted automatically yet.
-- **The brochure QR code** is a placeholder (`[QR]`), and staff names, booth number and wait time are bracketed
-  placeholders.
+- **The brochure QR code** is a placeholder (`[QR]`). In the built-in example, the brand, booth, staff names, wait
+  time and specs are made-up dummy values.
 - **Publishing to other devices** needs a Vercel Blob store connected to the deployment. Without one, the kiosk only
   picks up a demo published from the same browser.
 

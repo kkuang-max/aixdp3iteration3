@@ -552,7 +552,7 @@ export function Contact(props: SendProps & { accent: string; onBrochure: () => v
         eyebrow={named(productName, "LEAVE CONTACT INFO")}
         title="THANKS, WE’LL BE IN TOUCH"
         body={`Your details have been sent to the ${productName ? `${titleCase(productName)} team` : "team"}. They’ll be in touch about your inquiry.`}
-        note={`Your contact information will be deleted after ${demo?.retentionDays ? `${demo.retentionDays} day${demo.retentionDays === 1 ? "" : "s"}` : "[X days]"}.`}
+        note={`Your contact information will be deleted after ${demo?.retentionDays ? `${demo.retentionDays} day${demo.retentionDays === 1 ? "" : "s"}` : demo ? "[X days]" : "30 days"}.`}
         onDone={props.onBack}
         accent={props.accent}
       />
