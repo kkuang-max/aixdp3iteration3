@@ -52,6 +52,10 @@ const PINCH_MAX_TURN = 1.45; // hand size changing by more than this within the 
 const PINCH_OPEN_AT = 0.75; // fingers clearly apart (in hand sizes) to count as spread
 const PINCH_SHUT_AT = 0.7; // fingers together (in hand sizes) to count as pinched in
 const PINCH_HOLD_MS = 100; // ...and kept together this long, with the hand still in view
+// The other hand never points, so it can't zoom by accident while aiming: a smaller spread is enough.
+const PINCH_OPEN_OTHER = 0.3;
+const PINCH_OPEN_AT_OTHER = 0.6;
+const OTHER_LOST_MS = 300; // the other hand dropping out of the camera this briefly doesn't restart its pinch
 const WHEEL_STEP = 60; // accumulated wheel / trackpad-pinch delta for one zoom in / out
 const TOUCH_IN = 1.25; // two-finger distance ratio that zooms in on a touchscreen
 const TOUCH_OUT = 0.8;
@@ -65,13 +69,15 @@ const EDGE_TIPS = {
 } as const;
 type Edge = keyof typeof EDGE_TIPS;
 const edgeOf = (x: number, y: number): Edge | null =>
-  y > 0.78 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
+  y > 0.85 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
 
 export type HoldState = { holding: boolean; part: string | null; zoomed: boolean; zoomPart: string | null; origin: string; shift: [number, number]; scale: number };
 const NO_HOLD: HoldState = { holding: false, part: null, zoomed: false, zoomPart: null, origin: "50% 50%", shift: [0, 0], scale: 1.6 };
 /** Where the model sits on the 1280×720 stage (matches .modelZone). */
 const MODEL_AREA = { x: 400, y: 70, w: 460, h: 495 };
 /** A zoomed part is centred here and fits inside this box, between the topics and the text (stage px). */
+// A pinch a little outside the model still zooms (into the nearest part). Stage px; less on the left, where the topics are.
+const ZOOM_MARGIN = { l: 40, r: 100, t: 60, b: 70 };
 const ZOOM_CENTER = { x: 630, y: 320 };
 const ZOOM_FIT = { w: 360, h: 400 };
 
@@ -109,6 +115,75 @@ function nearestPart(x: number, y: number): { part: string; cx: number; cy: numb
     if (d < bestD) { bestD = d; best = { part, cx: (b.l + b.r) / 2, cy: (b.t + b.b) / 2, size: Math.max(b.r - b.l, b.b - b.t) }; }
   }
   return best;
+}
+
+type PinchTrack = {
+  spread: number; // smoothed thumb–index spread, in hand sizes (-1 = not measured yet)
+  hist: [number, number, number, number, number][]; // recent [time, spread, hand size, pointer x, pointer y]
+  palm: [number, number, number] | null; // last [time, x, y] of the palm, for its speed
+  shutSince: number; // when the fingers came together while zoomed in (0 = not pinched in)
+};
+const newPinch = (): PinchTrack => ({ spread: -1, hist: [], palm: null, shutSince: 0 });
+
+/**
+ * One hand's pinch, frame by frame. Calls fire(true, x, y) for a pinch out (zoom in at x, y) and fire(false) for a
+ * pinch in. Either hand zooms where the pointer was when the pinch started.
+ */
+function pinchStep(
+  t: PinchTrack,
+  lm: { x: number; y: number }[],
+  palmX: number,
+  palmY: number,
+  aspect: number,
+  now: number,
+  px: number,
+  py: number,
+  zoomed: boolean,
+  pointing: boolean,
+  fire: (open: boolean, x: number, y: number) => boolean,
+) {
+  const prev = t.palm;
+  t.palm = [now, palmX, palmY];
+  const speed = prev ? Math.hypot(palmX - prev[1], palmY - prev[2]) / Math.max((now - prev[0]) / 1000, 1e-3) : 0;
+  // In view: the camera still sees the wrist, thumb and fingertip. (Not the palm-based edge warning: pointing at the
+  // bottom of the model puts the palm low in the camera's view while the hand is still tracked fine.)
+  const inView = lm.length >= 10 && [0, 4, 8].every((i) => lm[i].y > 0.02 && lm[i].y < 0.98 && lm[i].x > 0.02 && lm[i].x < 0.98);
+  const d = (a: number, b: number) => Math.hypot((lm[a].x - lm[b].x) * aspect, lm[a].y - lm[b].y);
+  const size = inView ? d(0, 9) : 0;
+  if (!(speed < PINCH_MAX_SPEED && inView && size > 1e-3)) {
+    // Moving or near the edge: start over once the hand is still again.
+    t.hist = [];
+    t.shutSince = 0;
+    return;
+  }
+  const raw = d(4, 8) / size;
+  t.spread = t.spread < 0 ? raw : t.spread * 0.5 + raw * 0.5;
+  t.hist.push([now, t.spread, size, px, py]);
+  while (t.hist.length && now - t.hist[0][0] > PINCH_WINDOW_MS) t.hist.shift();
+  const sizes = t.hist.map((h) => h[2]);
+  const turning = Math.max(...sizes) / Math.min(...sizes) > PINCH_MAX_TURN;
+  if (turning) {
+    t.shutSince = 0;
+    return;
+  }
+  if (t.hist.length <= 3) return;
+  const vals = t.hist.map((h) => h[1]);
+  const opened = t.spread - Math.min(...vals);
+  const closed = Math.max(...vals) - t.spread;
+  if (!zoomed) {
+    if (pointing ? opened > PINCH_OPEN && t.spread > PINCH_OPEN_AT : opened > PINCH_OPEN_OTHER && t.spread > PINCH_OPEN_AT_OTHER) {
+      // Where the pointer was when the fingers started opening: spreading moves the fingertip, and people tend to move
+      // the pointing hand a little while the other hand pinches.
+      const start = t.hist.reduce((a, h) => (h[1] < a[1] ? h : a));
+      fire(true, start[3], start[4]);
+    }
+    return;
+  }
+  // Pinched in: the fingers came together and stayed together, with the hand steady and in view.
+  if (t.spread < PINCH_SHUT_AT && (t.shutSince || closed > PINCH_CLOSE)) {
+    if (!t.shutSince) t.shutSince = now;
+    else if (now - t.shutSince >= PINCH_HOLD_MS) fire(false, px, py);
+  } else t.shutSince = 0;
 }
 
 const KEY_DIRS: Record<string, SwipeDir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
@@ -247,11 +322,10 @@ export default function Kiosk() {
     zoomOrigin: "50% 50%",
     zoomShift: [0, 0] as [number, number],
     zoomScale: 1.6,
-    spread: -1, // smoothed thumb–index spread, in hand sizes (-1 = not measured yet)
-    spreadHist: [] as [number, number, number][], // recent [time, spread, hand size], to spot an opening or closing pinch
-    palm: null as [number, number, number] | null, // last [time, x, y] of the palm, for its speed
-    shutSince: 0, // when the fingers came together while zoomed in (0 = not pinched in)
+    // Pinch tracking for the pointing hand and the visitor's other hand (zoom only).
+    pinch: [newPinch(), newPinch()] as [PinchTrack, PinchTrack],
     pinchQuiet: 0,
+    otherSeen: 0, // when the visitor's other hand was last in view
     wheelAcc: 0,
     wheelAt: 0,
     touchD0: 0,
@@ -366,11 +440,12 @@ export default function Kiosk() {
     );
   }, []);
   /** Is the point over the model's area (not just one of its parts)? */
-  const overModel = (x: number, y: number) => {
+  const overModel = (x: number, y: number, margin = { l: 0, r: 0, t: 0, b: 0 }) => {
     const zone = document.querySelector("[data-model-zone]");
     if (!zone) return false;
     const r = zone.getBoundingClientRect();
-    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    const k = r.width / MODEL_AREA.w; // stage px → screen px
+    return x >= r.left - margin.l * k && x <= r.right + margin.r * k && y >= r.top - margin.t * k && y <= r.bottom + margin.b * k;
   };
   /** Fit the zoomed part whole in the middle of the screen: scaled so it fills ZOOM_FIT, centred on ZOOM_CENTER. */
   const aimZoom = useCallback(() => {
@@ -394,7 +469,7 @@ export default function Kiosk() {
   /** Zoom in on the part nearest (x, y). Only on the topics whose parts come apart (How it works, Specs). */
   const zoomIn = useCallback((x: number, y: number) => {
     const s = ix.current;
-    if (s.zoomed || s.screen !== "hub" || !PART_TOPICS.has(TOPICS[s.topic].id) || !overModel(x, y)) return false;
+    if (s.zoomed || s.screen !== "hub" || !PART_TOPICS.has(TOPICS[s.topic].id) || !overModel(x, y, ZOOM_MARGIN)) return false;
     const near = nearestPart(x, y);
     if (!near) return false;
     s.zoomed = true;
@@ -443,10 +518,7 @@ export default function Kiosk() {
     const s = ix.current;
     s.zoneSince = 0;
     s.holding = false;
-    s.spread = -1;
-    s.spreadHist = [];
-    s.shutSince = 0;
-    s.palm = null;
+    s.pinch = [newPinch(), newPinch()];
     pushHold();
   }, [pushHold]);
   // A new topic or screen starts un-zoomed.
@@ -577,7 +649,7 @@ export default function Kiosk() {
       const swipe = teach || !swiping ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
       if (swipe) onSwipe(swipe.dir);
 
-      if (dbg.on) {
+      if (dbg.on && swiping) { // pointing: the pinch line below
         if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
         const miss = swipes.current.miss;
         const text = swiping ? `${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}` : `POINT · ${dbg.stats}`;
@@ -623,44 +695,29 @@ export default function Kiosk() {
       // stays zoomed; bringing them back together, and keeping them together for a moment, zooms out. Measured in hand
       // sizes so it works near and far from the camera. A hand that's moving, turning, near the edge of the camera's
       // view or leaving it never counts, so taking the hand away doesn't close the zoom.
-      const lm = hand.landmarks;
-      const prevPalm = s.palm;
-      s.palm = [now, hand.palmX, hand.palmY];
-      const speed = prevPalm ? Math.hypot(hand.palmX - prevPalm[1], hand.palmY - prevPalm[2]) / Math.max((now - prevPalm[0]) / 1000, 1e-3) : 0;
-      const steady = speed < PINCH_MAX_SPEED && !edgeOf(hand.palmX, hand.palmY);
-      if (lm?.length >= 10 && !swiping) {
-        const d = (a: number, b: number) => Math.hypot((lm[a].x - lm[b].x) * hand.aspect, lm[a].y - lm[b].y);
-        const size = d(0, 9);
-        if (size > 1e-3 && steady) {
-          const raw = d(4, 8) / size;
-          s.spread = s.spread < 0 ? raw : s.spread * 0.5 + raw * 0.5;
-          s.spreadHist.push([now, s.spread, size]);
-          while (s.spreadHist.length && now - s.spreadHist[0][0] > PINCH_WINDOW_MS) s.spreadHist.shift();
-          const sizes = s.spreadHist.map((h) => h[2]);
-          const turning = Math.max(...sizes) / Math.min(...sizes) > PINCH_MAX_TURN;
-          if (now >= s.pinchQuiet && s.spreadHist.length > 3 && !turning) {
-            const vals = s.spreadHist.map((h) => h[1]);
-            const opened = s.spread - Math.min(...vals);
-            const closed = Math.max(...vals) - s.spread;
-            let fired = false;
-            if (!s.zoomed && opened > PINCH_OPEN && s.spread > PINCH_OPEN_AT) fired = zoomIn(s.x, s.y);
-            else if (s.zoomed) {
-              // Pinched in: the fingers came together and stayed together, with the hand steady and in view.
-              if (s.spread < PINCH_SHUT_AT && (s.shutSince || closed > PINCH_CLOSE)) {
-                if (!s.shutSince) s.shutSince = now;
-                else if (now - s.shutSince >= PINCH_HOLD_MS) fired = zoomOut();
-              } else s.shutSince = 0;
-            }
-            if (fired) {
-              s.spreadHist = [];
-              s.shutSince = 0;
-              s.pinchQuiet = now + PINCH_QUIET_MS;
-            }
-          } else if (turning) s.shutSince = 0;
-        } else {
-          // Moving or near the edge: start over once the hand is still again.
-          s.spreadHist = [];
-          s.shutSince = 0;
+      // Either hand can pinch: the pointing hand, or the visitor's other hand while the pointing hand holds still on a
+      // part (then the zoom goes where the pointer is).
+      if (swiping) return;
+      const fire = (open: boolean, x: number, y: number) => {
+        if (now < s.pinchQuiet) return false;
+        const fired = open ? zoomIn(x, y) : zoomOut();
+        if (fired) {
+          s.pinch = [newPinch(), newPinch()];
+          s.pinchQuiet = now + PINCH_QUIET_MS;
+        }
+        return fired;
+      };
+      pinchStep(s.pinch[0], hand.landmarks, hand.palmX, hand.palmY, hand.aspect, now, s.x, s.y, s.zoomed, true, fire);
+      if (hand.other) {
+        s.otherSeen = now;
+        pinchStep(s.pinch[1], hand.other.landmarks, hand.other.palmX, hand.other.palmY, hand.aspect, now, s.x, s.y, s.zoomed, false, fire);
+      } else if (now - s.otherSeen > OTHER_LOST_MS) s.pinch[1] = newPinch();
+      if (dbg.on) {
+        const o = hand.other ? `2ND HAND: ZOOM · SPREAD ${s.pinch[1].spread.toFixed(1)}` : hand.otherIgnored ? `2ND HAND IGNORED (${hand.otherIgnored === "far" ? "TOO FAR APART" : "SIZE DIFFERS"})` : "2ND HAND: NONE";
+        const text = `POINT · ${dbg.stats} · SPREAD ${s.pinch[0].spread.toFixed(1)} · ${o}${s.zoomed ? " · ZOOMED" : ""}`;
+        if (text !== dbg.text) {
+          dbg.text = text;
+          setDebug(text);
         }
       }
     },
@@ -903,9 +960,9 @@ export default function Kiosk() {
   const pinchGuide = !partTopic
     ? null
     : hold.zoomed
-      ? { title: "PINCH IN TO ZOOM BACK OUT", sub: camOk ? "Bring your thumb and finger together" : "Pinch two fingers together, or scroll down" }
+      ? { title: "PINCH IN TO ZOOM BACK OUT", sub: camOk ? "Bring your thumb and finger together, on either hand" : "Pinch two fingers together, or scroll down" }
       : hold.holding
-        ? { title: "SPREAD YOUR FINGERS TO ZOOM IN", sub: camOk ? "Move your thumb and finger apart near a part" : "Spread two fingers near a part, or scroll up" }
+        ? { title: "SPREAD YOUR FINGERS TO ZOOM IN", sub: camOk ? "Thumb and finger apart, on this hand or your other one" : "Spread two fingers near a part, or scroll up" }
         : null;
   const hubGuide = pinchGuide ?? rowGuide;
 
@@ -1037,9 +1094,9 @@ export default function Kiosk() {
   );
 }
 
-/** Only How it works and Specs move the model; every other topic shows it whole. */
+/** How it works and Specs show every part fully apart, the same way; every other topic shows the model whole. */
 function topicExplode(i: number) {
-  return PART_TOPICS.has(TOPICS[i].id) ? TOPICS[i].explode : 0;
+  return PART_TOPICS.has(TOPICS[i].id) ? 1 : 0;
 }
 
 function clearDwell(s: { dwellEl: HTMLElement | null; dwellFired: boolean }) {

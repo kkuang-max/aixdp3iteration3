@@ -3,7 +3,7 @@
 // Typing on a kiosk with no physical keyboard. When a visitor picks a field on a details form, this panel opens on
 // the left of the screen:
 //   • Type on your phone: a QR code opens the same form on their phone (/type/<code>); what they send there comes back
-//     to the kiosk, which sends it on. Shown only when the deployment can relay it (accounts set up).
+//     to the kiosk, which sends it on. Always shown; it says so when the site can't pass the details through.
 //   • An on-screen keyboard: keys are pressed by holding a hand over them (like every kiosk button), a tap or a click.
 //     It has email shortcuts, suggestions, and a number pad for phone numbers.
 
@@ -87,7 +87,7 @@ export function TypingPanel(props: {
   onNext: () => void;
   onClose: () => void;
   name: string; // what they typed as their name (for email suggestions)
-  phoneUrl: string | null; // null: typing on a phone isn't available here
+  phoneUrl: string | null; // null: typing on a phone isn't available here (the row says so)
 }) {
   const { kind, value, onChange } = props;
   const [pad, setPad] = useState<"auto" | "on" | "off">("auto"); // number pad: auto = on for a phone number
@@ -107,17 +107,19 @@ export function TypingPanel(props: {
 
   return (
     <div className={styles.typingPanel} role="dialog" aria-label={`Type ${props.label}`}>
-      {props.phoneUrl && (
-        <div className={styles.phoneRow}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <span className={styles.phoneQr} aria-hidden="true">{qr && <img src={`data:image/svg+xml;utf8,${encodeURIComponent(qr)}`} alt="" />}</span>
-          <span className={styles.phoneText}>
-            <b>TYPE ON YOUR PHONE</b>
+      <div className={styles.phoneRow} data-off={props.phoneUrl ? undefined : ""}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <span className={styles.phoneQr} aria-hidden="true">{props.phoneUrl && qr && <img src={`data:image/svg+xml;utf8,${encodeURIComponent(qr)}`} alt="" />}</span>
+        <span className={styles.phoneText}>
+          <b>TYPE ON YOUR PHONE</b>
+          {props.phoneUrl ? (
             <span>Scan to fill this in on your own phone. It sends from there, and the screen updates.</span>
-            <small>Or use the keyboard below.</small>
-          </span>
-        </div>
-      )}
+          ) : (
+            <span>Not available on this kiosk right now.</span>
+          )}
+          <small>Or use the keyboard below.</small>
+        </span>
+      </div>
       <div className={styles.typingHead}>
         <span>{props.label.toUpperCase()}</span>
         <button type="button" className={styles.typingClose} data-dwell={KEY_MS} onClick={props.onClose} aria-label="Close the keyboard">×<span className={styles.keyFill} aria-hidden="true" /></button>

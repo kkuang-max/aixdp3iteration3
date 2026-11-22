@@ -77,11 +77,10 @@ function ProductModel(props: { topicId: string; explode: number; highlight: read
   const file = useContext(ModelFileContext);
   const [failed, setFailed] = useState<ArrayBuffer | null>(null); // the file the live view couldn't show
   if (demo?.model) {
-    // Only How it works and Specs light or move parts; other topics show the whole model turning.
-    const mapping = props.interactive ? demo.mappings.find((m) => m.sectionId === props.topicId) : undefined;
     // Hovering only lights a part up; nothing moves. Zooming in on a part turns the rest see-through.
     const part = props.rowPart ?? null;
-    const mode = !props.interactive ? "Slow turn" : (mapping?.mode ?? "Highlight");
+    // How it works and Specs: every part apart, the same way on both. Other topics: the whole model turning.
+    const mode = !props.interactive ? "Slow turn" : "Explode apart";
     if (file && failed !== file.data) {
       return (
         <>
@@ -403,7 +402,7 @@ function DetailsForm(props: {
 
   // Type on your phone: a one-time code for this form; the kiosk checks every 2 s whether the phone has sent details.
   const [code] = useState(() => Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("") + Date.now().toString(36));
-  const [phoneOk, setPhoneOk] = useState(false);
+  const [phoneOk, setPhoneOk] = useState<boolean | null>(null); // null: still checking; false: not set up here
   const submitRef = useRef(props.onSubmit);
   const changeRef = useRef(props.onChange);
   useEffect(() => {
@@ -416,7 +415,7 @@ function DetailsForm(props: {
     const check = async () => {
       try {
         const res = await fetch(`/api/handoff/${code}`, { cache: "no-store" });
-        if (res.status === 503) return; // not available on this deployment: keyboard only
+        if (res.status === 503) { if (!stop) setPhoneOk(false); return; } // not set up on this deployment
         if (!stop) setPhoneOk(true);
         const json = await res.json();
         if (json.details && !stop) {
@@ -434,7 +433,8 @@ function DetailsForm(props: {
     check();
     return () => { stop = true; clearTimeout(timer); };
   }, [code]);
-  const phoneUrl = phoneOk && typeof window !== "undefined" ? `${window.location.origin}/type/${code}?k=${props.kind}` : null;
+  // The QR always shows; it only says it can't be used where the site has nowhere to pass the details through.
+  const phoneUrl = phoneOk !== false && typeof window !== "undefined" ? `${window.location.origin}/type/${code}?k=${props.kind}` : null;
 
   const fieldValue = (f: NonNullable<typeof active>) => (f === "name" ? s.name : f === "email" ? s.email : f === "company" ? s.company : s.questions);
   const setField = (f: NonNullable<typeof active>, v: string) => {
@@ -484,7 +484,7 @@ function DetailsForm(props: {
       )}
       {!active && (
         <button type="button" className={styles.phoneLink} data-dwell={DWELL_BUTTON_MS} onClick={() => setActive("name")}>
-          <KeyboardIcon /> {phoneOk ? "TYPE ON YOUR PHONE OR THE SCREEN" : "OPEN THE KEYBOARD"}
+          <KeyboardIcon /> TYPE ON YOUR PHONE OR THE SCREEN
           <span className={styles.dwellBar} aria-hidden="true" />
         </button>
       )}
