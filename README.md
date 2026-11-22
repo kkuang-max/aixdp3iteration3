@@ -63,7 +63,8 @@ mouse work too.
 - **Nothing is sent to anyone.** Leads (name, email or phone, company, questions) are only saved in that browser's
   storage (`playform.leads`). A real booth would send them to its CRM. No ticket number, wait time or brochure is
   actually emailed.
-- **"Deleted after [X days]"** is the wording only. Leads aren't deleted automatically yet.
+- **Leads on a kiosk without a booth link** stay in that browser and aren't deleted automatically. Leads from a booth
+  kiosk go to the business's account and are deleted after the account's retention period (every night).
 - **The brochure QR code** is a placeholder (`[QR]`). In the built-in example, the brand, booth, staff names, wait
   time and specs are made-up dummy values.
 - **Publishing to other devices** needs a Vercel Blob store connected to the deployment. Without one, the kiosk only
