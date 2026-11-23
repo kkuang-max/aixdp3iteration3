@@ -11,20 +11,24 @@ import styles from "./kiosk.module.css";
 
 /** Kiosk asks a live model which part is under a screen point (for hover). */
 export const livePickers = new WeakMap<HTMLCanvasElement, (x: number, y: number) => string | null>();
+/** Kiosk asks a live model which part is nearest a screen point (where to zoom in), and where that part is on screen. */
+export const liveNearest = new WeakMap<HTMLCanvasElement, (x: number, y: number) => { part: string; cx: number; cy: number; size: number } | null>();
+/** Where a named part is on screen right now (for centring a zoom on it). */
+export const liveBox = new WeakMap<HTMLCanvasElement, (part: string) => { l: number; t: number; r: number; b: number } | null>();
 
-type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void };
+type Props = { name: string; data: ArrayBuffer; part: string | null; mode: string; accent: string; onFail: () => void; paused?: boolean; glow?: string | null; frozen?: boolean };
 
 const SIZE = 460; // CSS px, the same box as the sample earbud
 const SWAY_S = 14; // one sway cycle, as the sample earbud
 const EASE = 3.5; // how fast explode / camera moves settle (per second)
 
-export default function LiveModel({ name, data, part, mode, accent, onFail }: Props) {
+export default function LiveModel({ name, data, part, mode, accent, onFail, paused = false, glow = null, frozen = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const target = useRef({ part, mode });
+  const target = useRef({ part, mode, paused, glow, frozen });
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    target.current = { part, mode };
-  }, [part, mode]);
+    target.current = { part, mode, paused, glow, frozen };
+  }, [part, mode, paused, glow, frozen]);
   const failRef = useRef(onFail);
   useEffect(() => {
     failRef.current = onFail;
@@ -92,7 +96,7 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
         const from = parent.worldToLocal(c.clone());
         const to = parent.worldToLocal(c.clone().addScaledVector(dir, radius * 0.45));
         const local = to.sub(from);
-        return { ...p, home: p.node.position.clone(), away: local, center: c, size: Math.max(box.getSize(new THREE.Vector3()).length() / 2, radius * 0.08) };
+        return { ...p, home: p.node.position.clone(), away: local, center: c, pulled: 0, size: Math.max(box.getSize(new THREE.Vector3()).length() / 2, radius * 0.08) };
       });
 
       // Lit and dimmed versions of each mesh's material.
@@ -105,23 +109,27 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
           lit: list.map((mat) => {
             const c = mat.clone() as import("three").MeshStandardMaterial;
             if ("emissive" in c && c.emissive) { c.emissive = accentColor.clone(); c.emissiveIntensity = 0.45; }
+            else if ("color" in c && c.color) c.color = (c.color as import("three").Color).clone().lerp(accentColor, 0.45);
             return c;
           }),
           dim: list.map((mat) => {
             const c = mat.clone();
             c.transparent = true;
-            c.opacity = 0.18;
+            c.opacity = 0.15;
             c.depthWrite = false;
             return c;
           }),
         });
       }
-      let shownPart: string | null | undefined;
-      const applyLook = (lit: string | null) => {
-        const litMeshes = new Set(info.find((p) => p.name === lit)?.meshes ?? []);
+      let shownLook: string | undefined;
+      const one = (list: import("three").Material[], normal: import("three").Material | import("three").Material[]) => (Array.isArray(normal) ? list : list[0]);
+      // Zoomed in on a part: it keeps its own look and everything else goes see-through. Pointed at: it lights up.
+      const applyLook = (focus: string | null, glowing: string | null) => {
+        const focusMeshes = new Set(info.find((p) => p.name === focus)?.meshes ?? []);
+        const glowMeshes = new Set(info.find((p) => p.name === glowing)?.meshes ?? []);
         for (const [m, look] of looks) {
-          if (!litMeshes.size) m.material = look.normal;
-          else m.material = litMeshes.has(m) ? (Array.isArray(look.normal) ? look.lit : look.lit[0]) : (Array.isArray(look.normal) ? look.dim : look.dim[0]);
+          if (focusMeshes.size) m.material = focusMeshes.has(m) ? look.normal : one(look.dim, look.normal);
+          else m.material = glowMeshes.has(m) ? one(look.lit, look.normal) : look.normal;
         }
       };
 
@@ -135,30 +143,39 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
 
       let explode = 0;
       let turn = 0;
+      let swayClock = performance.now() / 1000;
       let last = performance.now();
       const tick = (now: number) => {
         raf = requestAnimationFrame(tick);
         const dt = Math.min((now - last) / 1000, 0.1);
         last = now;
         const k = 1 - Math.exp(-dt * EASE);
-        const { part: want, mode: how } = target.current;
+        const { part: want, mode: how, paused: hold, glow: glowing, frozen } = target.current;
         const litName = want && want !== "Whole product" && want !== "None" ? want : null;
         const focus = info.find((p) => p.name === litName);
+        const glowName = glowing && glowing !== "Whole product" && glowing !== "None" ? glowing : null;
 
-        if (litName !== shownPart) {
-          applyLook(litName);
-          shownPart = litName;
+        if (`${litName}|${glowName}` !== shownLook) {
+          applyLook(litName, glowName);
+          shownLook = `${litName}|${glowName}`;
+        }
+        // Zoomed in: everything stays exactly where it is, so the part the page centred doesn't drift.
+        if (frozen) {
+          renderer.render(scene, camera);
+          return;
         }
 
-        // Explode
-        const wantExplode = how === "Explode apart" ? 1 : how === "Put back together" ? 0 : focus ? 0.25 : 0;
+        // Explode (set by the topic; pointing at a part never moves anything)
+        const wantExplode = how === "Explode apart" ? 1 : 0;
         explode += (wantExplode - explode) * k;
         for (const p of info) p.node.position.copy(p.home).addScaledVector(p.away, explode);
 
         // Turn: slow full turn, or a gentle sway like the sample earbud
-        if (how === "Slow turn") turn += dt * ((Math.PI * 2) / 20);
-        const sway = how === "Slow turn" ? turn : Math.sin((now / 1000 / SWAY_S) * Math.PI * 2) * 0.55;
-        pivot.rotation.y += (sway - pivot.rotation.y) * (how === "Slow turn" ? 1 : k);
+        // Holding over the model stops it turning; it picks up again from where it stopped.
+        if (!hold) swayClock += dt;
+        if (how === "Slow turn" && !hold) turn += dt * ((Math.PI * 2) / 20);
+        const sway = how === "Slow turn" ? turn : Math.sin((swayClock / SWAY_S) * Math.PI * 2) * 0.55;
+        if (!hold) pivot.rotation.y += (sway - pivot.rotation.y) * (how === "Slow turn" ? 1 : k);
 
         // Camera: whole model, or close on the part for Zoom in
         let wantPos = viewDir.clone().multiplyScalar(dist);
@@ -187,10 +204,41 @@ export default function LiveModel({ name, data, part, mode, accent, onFail }: Pr
         const hit = raycaster.intersectObjects(meshes, false)[0];
         return hit ? (partOfMesh.get(hit.object) ?? null) : null;
       });
+      // A part's box on screen: its 3D box's 8 corners projected.
+      const screenBox = (p: (typeof info)[number]) => {
+        const r = canvas.getBoundingClientRect();
+        const box = new THREE.Box3().setFromObject(p.node);
+        let l = Infinity, t = Infinity, rr = -Infinity, bb = -Infinity;
+        for (const cx of [box.min.x, box.max.x]) for (const cy of [box.min.y, box.max.y]) for (const cz of [box.min.z, box.max.z]) {
+          const v = new THREE.Vector3(cx, cy, cz).project(camera);
+          const sx = r.left + ((v.x + 1) / 2) * r.width, sy = r.top + ((1 - v.y) / 2) * r.height;
+          l = Math.min(l, sx); rr = Math.max(rr, sx); t = Math.min(t, sy); bb = Math.max(bb, sy);
+        }
+        return { l, t, r: rr, b: bb };
+      };
+      liveBox.set(canvas, (name) => {
+        const p = info.find((x) => x.name === name);
+        return p ? screenBox(p) : null;
+      });
+      liveNearest.set(canvas, (x, y) => {
+        // The part right under the point wins; otherwise the part whose centre is nearest on screen.
+        const under = livePickers.get(canvas)?.(x, y) ?? null;
+        let best: { part: string; cx: number; cy: number; size: number } | null = null;
+        let bestD = Infinity;
+        for (const p of info) {
+          const { l, t, r: rr, b: bb } = screenBox(p);
+          const cx = (l + rr) / 2, cy = (t + bb) / 2;
+          const d = p.name === under ? -1 : Math.hypot(cx - x, cy - y);
+          if (d < bestD) { bestD = d; best = { part: p.name, cx, cy, size: Math.max(rr - l, bb - t) }; }
+        }
+        return best;
+      });
       setReady(true);
 
       cleanup = () => {
         livePickers.delete(canvas);
+        liveNearest.delete(canvas);
+        liveBox.delete(canvas);
         cancelAnimationFrame(raf);
         for (const look of looks.values()) [...look.lit, ...look.dim].forEach((m) => m.dispose());
         root.traverse((o) => {

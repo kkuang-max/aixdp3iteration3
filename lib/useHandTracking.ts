@@ -15,7 +15,20 @@ export type HandFrame = {
   // Video width / height, to compare horizontal and vertical movement fairly.
   aspect: number;
   landmarks: NormalizedLandmark[];
+  // The visitor's other hand, if the camera sees it: only ever used to pinch-zoom (the first hand stays the pointer).
+  // Only a hand that looks like the same person's (similar size, close by) counts; nobody else's.
+  other: { landmarks: NormalizedLandmark[]; palmX: number; palmY: number } | null;
+  // A second hand the camera saw but that didn't count as the visitor's (for the debug line).
+  otherIgnored: "size" | "far" | null;
 };
+
+// The second hand counts only if it's the same person's: about the same size and within arm's reach. (Hand size is
+// wrist to middle knuckle, so two hands held apart in front of the body are often 6–9 hand sizes apart.)
+const OTHER_SIZE_RATIO = 1.8;
+const OTHER_MAX_APART = 11; // hand sizes between the two palms
+// When the camera loses the pointing hand for a moment but still sees the other one, the other hand doesn't take over
+// as the pointer for this long (the pointing hand usually comes straight back).
+const MAIN_GRACE_MS = 450;
 
 const PALM = [0, 5, 9, 13, 17];
 
@@ -84,7 +97,7 @@ export function useHandTracking(
           HandLandmarker.createFromOptions(vision, {
             baseOptions: { modelAssetPath: MODEL_PATH, delegate },
             runningMode: "VIDEO",
-            numHands: 1,
+            numHands: 2, // the pointing hand, plus the same visitor's other hand for zooming. Never more.
             minHandDetectionConfidence: 0.5,
             // Lower than MediaPipe's defaults so it holds on to a blurry, fast-moving hand mid-swipe
             // instead of dropping it (a new hand still needs the full detection confidence).
@@ -107,6 +120,9 @@ export function useHandTracking(
     function loop(connections: { start: number; end: number }[]) {
       let lastTime = -1;
       let seen = false;
+      let mainPalm: [number, number] | null = null; // where the pointing hand was last frame (camera coords)
+      let mainLast: { lm: NormalizedLandmark[]; at: number } | null = null; // the pointing hand when last seen
+      const palmOf = (lm: NormalizedLandmark[]): [number, number] => [PALM.reduce((a, i) => a + lm[i].x, 0) / PALM.length, PALM.reduce((a, i) => a + lm[i].y, 0) / PALM.length];
       const tick = () => {
         raf = requestAnimationFrame(tick);
         const video = videoRef.current;
@@ -114,8 +130,35 @@ export function useHandTracking(
         lastTime = video.currentTime;
 
         const result = landmarker.detectForVideo(video, performance.now());
-        const lm = result.landmarks[0];
-        draw(lm, connections);
+        const aspect = video.videoWidth / Math.max(video.videoHeight, 1);
+        // The pointing hand is the one nearest where it was; the first hand seen takes the role and keeps it.
+        const now = performance.now();
+        const size = (h: NormalizedLandmark[]) => Math.hypot((h[0].x - h[9].x) * aspect, h[0].y - h[9].y);
+        const fromMain = (h: NormalizedLandmark[]) => { const [x, y] = palmOf(h); return mainPalm ? Math.hypot((x - mainPalm[0]) * aspect, y - mainPalm[1]) : 0; };
+        const hands = result.landmarks.slice(0, 2);
+        if (hands.length === 2 && mainPalm && fromMain(hands[1]) < fromMain(hands[0])) hands.reverse();
+        let lm: NormalizedLandmark[] | undefined = hands[0];
+        let other: NormalizedLandmark[] | undefined = hands[1];
+        // Only one hand in view, far from where the pointing hand just was: it's the other hand, and the pointing hand
+        // has dropped out for a moment. Keep pointing where it was rather than jumping the cursor to the other hand.
+        let mainStale = false;
+        if (lm && !other && mainLast && now - mainLast.at < MAIN_GRACE_MS && fromMain(lm) > 3 * size(mainLast.lm)) {
+          other = lm;
+          lm = mainLast.lm;
+          mainStale = true;
+        }
+        let otherIgnored: "size" | "far" | null = null;
+        if (lm && other) {
+          const [ax, ay] = palmOf(lm), [bx, by] = palmOf(other);
+          const s1 = size(lm), s2 = size(other);
+          const apart = Math.hypot((ax - bx) * aspect, ay - by) / Math.max(s1, 1e-3);
+          if (Math.max(s1, s2) / Math.max(Math.min(s1, s2), 1e-3) > OTHER_SIZE_RATIO) otherIgnored = "size";
+          else if (apart > OTHER_MAX_APART) otherIgnored = "far";
+          if (otherIgnored) other = undefined;
+        }
+        if (lm && !mainStale) mainLast = { lm, at: now };
+        mainPalm = lm ? palmOf(lm) : mainLast && now - mainLast.at < MAIN_GRACE_MS ? mainPalm : null;
+        draw(lm, other, connections);
 
         if (!!lm !== seen) {
           seen = !!lm;
@@ -126,26 +169,39 @@ export function useHandTracking(
           return;
         }
         const tip = lm[8];
-        const palmX = PALM.reduce((sum, i) => sum + lm[i].x, 0) / PALM.length;
-        const palmY = PALM.reduce((sum, i) => sum + lm[i].y, 0) / PALM.length;
+        const [palmX, palmY] = palmOf(lm);
+        const otherPalm = other ? palmOf(other) : null;
         onFrameRef.current({
           x: 1 - tip.x,
           y: tip.y,
           palmX: 1 - palmX,
           palmY,
-          aspect: video.videoWidth / Math.max(video.videoHeight, 1),
+          aspect,
           landmarks: lm,
+          other: other && otherPalm ? { landmarks: other, palmX: 1 - otherPalm[0], palmY: otherPalm[1] } : null,
+          otherIgnored,
         });
       };
       raf = requestAnimationFrame(tick);
     }
 
-    function draw(lm: NormalizedLandmark[] | undefined, connections: { start: number; end: number }[]) {
+    function draw(lm: NormalizedLandmark[] | undefined, other: NormalizedLandmark[] | undefined, connections: { start: number; end: number }[]) {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (!canvas || !ctx) return;
       const { width: w, height: h } = canvas;
       ctx.clearRect(0, 0, w, h);
+      // The other hand (zoom only) in a quieter colour.
+      if (other) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255,255,255,0.55)";
+        ctx.beginPath();
+        for (const { start, end } of connections) {
+          ctx.moveTo(other[start].x * w, other[start].y * h);
+          ctx.lineTo(other[end].x * w, other[end].y * h);
+        }
+        ctx.stroke();
+      }
       if (!lm) return;
       ctx.lineWidth = 2;
       ctx.strokeStyle = accentRef.current;
@@ -170,7 +226,7 @@ export function useHandTracking(
       landmarker?.close();
       stream?.getTracks().forEach((t) => t.stop());
       if (videoEl) videoEl.srcObject = null;
-      draw(undefined, []);
+      draw(undefined, undefined, []);
       onFrameRef.current(null);
       setStatus("loading");
     };

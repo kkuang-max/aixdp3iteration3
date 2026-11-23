@@ -1,15 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PART_TOPICS, TOPICS } from "@/lib/product";
-import { newSession, saveLead, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
+import { newSession, saveLead, saveVisit, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
 import { Brochure, Contact, DemoContext, Hub, ModelFileContext, Team } from "./Screens";
-import { livePickers } from "./LiveModel";
-import { loadPublishedDemo, loadPublishedModelFile, type PublishedDemo } from "@/lib/published";
+import { liveBox, liveNearest, livePickers } from "./LiveModel";
+import { kioskBooth, loadPreviewDemo, loadPublishedDemo, loadPublishedModelFile, watchPreview, type PublishedDemo } from "@/lib/published";
+
+/** A preview whose draft hasn't loaded yet: shows nothing rather than the built-in sample. */
+const EMPTY_PREVIEW: PublishedDemo = { version: 1, preview: true, publishedAt: "", productName: "", sections: [], mappings: [] };
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
@@ -17,18 +20,45 @@ const STAGE_W = 1280;
 const STAGE_H = 720;
 
 type Screen = "hub" | "staff" | "brochure" | "contact";
-const DEFAULT_TOPIC = 1; // "How it works": the exploded earbud is the strongest first impression
+const DEFAULT_TOPIC = 0; // "What it is": every visitor starts here (and the kiosk goes back here when it starts over)
 
 // Timing.
 const PRESENT_MS = 8000; // no hand and no touch/mouse for this long → nobody is at the kiosk
 const ATTRACT_CYCLE_MS = 5000; // nobody here: flip through the topics like a pamphlet on a stand
 const RESET_MS = 45000; // nobody here this long → clear the visitor's session, back to the start
 const RESET_STAFF_MS = 180000; // they were told to look around while staff come over, so wait longer
+const ZOOM_ABANDON_MS = 180000; // zoomed in and nobody seen this long: they walked away mid-zoom, start over
 const HAND_GRACE_MS = 250; // keep a dwell going through brief tracking misses
 const HAND_MARGIN = 0.12; // ignore the outer edge of the camera frame
 const SMOOTHING = 0.45;
 const TRAIL_LEN = 10;
 const TAU_EXPLODE = 0.35; // easing time constant (s) for the earbud coming apart
+
+// Hold and pinch on the 3D model.
+const HOLD_MS = { hand: 300, mouse: 120 }; // resting over the model this long stops it turning
+const PART_SETTLE_MS = [220, 90]; // hand, mouse: stay on a part this long before it lights up
+const PART_LEAVE_MS = [350, 150]; // hand, mouse: off the parts this long before the light goes out
+const HOLD_GRACE_MS = 450; // keep holding through brief slips off the model
+// Pinch: thumb–index spread, in hand sizes (wrist to middle knuckle). Opening by this much within PINCH_WINDOW_MS zooms
+// in; closing by this much zooms back out. Zoom stays on until then.
+const PINCH_OPEN = 0.45;
+const PINCH_CLOSE = 0.2;
+const PINCH_WINDOW_MS = 900;
+const PINCH_QUIET_MS = 700; // after a zoom in / out, ignore the hand settling
+// A pinch only counts from a hand that is held fairly still, in view and facing the camera. A hand being lowered or
+// taken away also brings the fingers together, so zooming out also needs the fingers to stay closed for a moment.
+const PINCH_MAX_SPEED = 1.5; // palm speed (camera frames per second) above which the hand is moving, not pinching
+const PINCH_MAX_TURN = 1.45; // hand size changing by more than this within the window: turning or moving away
+const PINCH_OPEN_AT = 0.75; // fingers clearly apart (in hand sizes) to count as spread
+const PINCH_SHUT_AT = 0.7; // fingers together (in hand sizes) to count as pinched in
+const PINCH_HOLD_MS = 100; // ...and kept together this long, with the hand still in view
+// The other hand never points, so it can't zoom by accident while aiming: a smaller spread is enough.
+const PINCH_OPEN_OTHER = 0.3;
+const PINCH_OPEN_AT_OTHER = 0.6;
+const OTHER_LOST_MS = 300; // the other hand dropping out of the camera this briefly doesn't restart its pinch
+const WHEEL_STEP = 60; // accumulated wheel / trackpad-pinch delta for one zoom in / out
+const TOUCH_IN = 1.25; // two-finger distance ratio that zooms in on a touchscreen
+const TOUCH_OUT = 0.8;
 
 // The camera loses a hand near the edge of its view. Held there this long → ask the visitor to move it.
 const EDGE_WARN_MS = 700;
@@ -39,7 +69,122 @@ const EDGE_TIPS = {
 } as const;
 type Edge = keyof typeof EDGE_TIPS;
 const edgeOf = (x: number, y: number): Edge | null =>
-  y > 0.78 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
+  y > 0.85 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
+
+export type HoldState = { holding: boolean; part: string | null; zoomed: boolean; zoomPart: string | null; origin: string; shift: [number, number]; scale: number };
+const NO_HOLD: HoldState = { holding: false, part: null, zoomed: false, zoomPart: null, origin: "50% 50%", shift: [0, 0], scale: 1.6 };
+/** Where the model sits on the 1280×720 stage (matches .modelZone). */
+const MODEL_AREA = { x: 400, y: 70, w: 460, h: 495 };
+/** A zoomed part is centred here and fits inside this box, between the topics and the text (stage px). */
+// A pinch a little outside the model still zooms (into the nearest part). Stage px; less on the left, where the topics are.
+const ZOOM_MARGIN = { l: 40, r: 100, t: 60, b: 70 };
+const ZOOM_CENTER = { x: 630, y: 320 };
+const ZOOM_FIT = { w: 360, h: 400 };
+
+/** A part's box on screen right now (sample earbud or uploaded model). */
+function partBox(part: string): { l: number; t: number; r: number; b: number } | null {
+  const canvas = document.querySelector("canvas[data-live-model][data-ready]");
+  if (canvas instanceof HTMLCanvasElement) return liveBox.get(canvas)?.(part) ?? null;
+  let box: { l: number; t: number; r: number; b: number } | null = null;
+  for (const el of document.querySelectorAll(`[data-model-part="${CSS.escape(part)}"]`)) {
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    box = box ? { l: Math.min(box.l, r.left), t: Math.min(box.t, r.top), r: Math.max(box.r, r.right), b: Math.max(box.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
+  }
+  return box;
+}
+
+/** The part of the model nearest a screen point: the sample earbud's drawn parts, or the uploaded model's 3D parts. */
+function nearestPart(x: number, y: number): { part: string; cx: number; cy: number; size: number } | null {
+  const canvas = document.querySelector("canvas[data-live-model][data-ready]");
+  if (canvas instanceof HTMLCanvasElement) return liveNearest.get(canvas)?.(x, y) ?? null;
+  const boxes = new Map<string, { l: number; t: number; r: number; b: number }>();
+  for (const el of document.querySelectorAll("[data-model-part]")) {
+    const id = el.getAttribute("data-model-part")!;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    const b = boxes.get(id);
+    boxes.set(id, b ? { l: Math.min(b.l, r.left), t: Math.min(b.t, r.top), r: Math.max(b.r, r.right), b: Math.max(b.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom });
+  }
+  let best: { part: string; cx: number; cy: number; size: number } | null = null;
+  let bestD = Infinity;
+  for (const [part, b] of boxes) {
+    const dx = Math.max(b.l - x, 0, x - b.r);
+    const dy = Math.max(b.t - y, 0, y - b.b);
+    const d = Math.hypot(dx, dy) + Math.hypot(x - (b.l + b.r) / 2, y - (b.t + b.b) / 2) * 0.01; // inside several: the closer centre
+    if (d < bestD) { bestD = d; best = { part, cx: (b.l + b.r) / 2, cy: (b.t + b.b) / 2, size: Math.max(b.r - b.l, b.b - b.t) }; }
+  }
+  return best;
+}
+
+type PinchTrack = {
+  spread: number; // smoothed thumb–index spread, in hand sizes (-1 = not measured yet)
+  hist: [number, number, number, number, number][]; // recent [time, spread, hand size, pointer x, pointer y]
+  palm: [number, number, number] | null; // last [time, x, y] of the palm, for its speed
+  shutSince: number; // when the fingers came together while zoomed in (0 = not pinched in)
+};
+const newPinch = (): PinchTrack => ({ spread: -1, hist: [], palm: null, shutSince: 0 });
+
+/**
+ * One hand's pinch, frame by frame. Calls fire(true, x, y) for a pinch out (zoom in at x, y) and fire(false) for a
+ * pinch in. Either hand zooms where the pointer was when the pinch started.
+ */
+function pinchStep(
+  t: PinchTrack,
+  lm: { x: number; y: number }[],
+  palmX: number,
+  palmY: number,
+  aspect: number,
+  now: number,
+  px: number,
+  py: number,
+  zoomed: boolean,
+  pointing: boolean,
+  fire: (open: boolean, x: number, y: number) => boolean,
+) {
+  const prev = t.palm;
+  t.palm = [now, palmX, palmY];
+  const speed = prev ? Math.hypot(palmX - prev[1], palmY - prev[2]) / Math.max((now - prev[0]) / 1000, 1e-3) : 0;
+  // In view: the camera still sees the wrist, thumb and fingertip. (Not the palm-based edge warning: pointing at the
+  // bottom of the model puts the palm low in the camera's view while the hand is still tracked fine.)
+  const inView = lm.length >= 10 && [0, 4, 8].every((i) => lm[i].y > 0.02 && lm[i].y < 0.98 && lm[i].x > 0.02 && lm[i].x < 0.98);
+  const d = (a: number, b: number) => Math.hypot((lm[a].x - lm[b].x) * aspect, lm[a].y - lm[b].y);
+  const size = inView ? d(0, 9) : 0;
+  if (!(speed < PINCH_MAX_SPEED && inView && size > 1e-3)) {
+    // Moving or near the edge: start over once the hand is still again.
+    t.hist = [];
+    t.shutSince = 0;
+    return;
+  }
+  const raw = d(4, 8) / size;
+  t.spread = t.spread < 0 ? raw : t.spread * 0.5 + raw * 0.5;
+  t.hist.push([now, t.spread, size, px, py]);
+  while (t.hist.length && now - t.hist[0][0] > PINCH_WINDOW_MS) t.hist.shift();
+  const sizes = t.hist.map((h) => h[2]);
+  const turning = Math.max(...sizes) / Math.min(...sizes) > PINCH_MAX_TURN;
+  if (turning) {
+    t.shutSince = 0;
+    return;
+  }
+  if (t.hist.length <= 3) return;
+  const vals = t.hist.map((h) => h[1]);
+  const opened = t.spread - Math.min(...vals);
+  const closed = Math.max(...vals) - t.spread;
+  if (!zoomed) {
+    if (pointing ? opened > PINCH_OPEN && t.spread > PINCH_OPEN_AT : opened > PINCH_OPEN_OTHER && t.spread > PINCH_OPEN_AT_OTHER) {
+      // Where the pointer was when the fingers started opening: spreading moves the fingertip, and people tend to move
+      // the pointing hand a little while the other hand pinches.
+      const start = t.hist.reduce((a, h) => (h[1] < a[1] ? h : a));
+      fire(true, start[3], start[4]);
+    }
+    return;
+  }
+  // Pinched in: the fingers came together and stayed together, with the hand steady and in view.
+  if (t.spread < PINCH_SHUT_AT && (t.shutSince || closed > PINCH_CLOSE)) {
+    if (!t.shutSince) t.shutSince = now;
+    else if (now - t.shutSince >= PINCH_HOLD_MS) fire(false, px, py);
+  } else t.shutSince = 0;
+}
 
 const KEY_DIRS: Record<string, SwipeDir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
@@ -50,6 +195,8 @@ export default function Kiosk() {
   // On "How it works" and "Specs": the row a visitor is pointing at or swiped to (its part lights up).
   const [activeRow, setActiveRow] = useState<number | null>(null);
   const [modelPart, setModelPart] = useState<string | null>(null); // the part of the model under the pointer
+  // Holding over the model stops it turning (and on How it works / Specs pulls the pointed part out); pinching zooms in.
+  const [hold, setHold] = useState<HoldState>(NO_HOLD);
   const [explode, setExplode] = useState(topicExplode(DEFAULT_TOPIC));
   // The session lives in a ref (time per topic grows every frame); screens get a snapshot of it.
   const [view, setView] = useState<Session>(newSession);
@@ -69,14 +216,46 @@ export default function Kiosk() {
     demoRef.current = demo;
   }, [demo]);
   const [modelFile, setModelFile] = useState<{ key: string; name: string; data: ArrayBuffer } | null>(null);
+  // Loading: nothing shows (no demo earbud) until we know what's published and its model file has arrived.
+  const [demoLoaded, setDemoLoaded] = useState(false);
+  const [modelGaveUp, setModelGaveUp] = useState(""); // file key the kiosk stopped waiting for (failed or too slow)
+
+  // A kiosk closed or reloaded mid-visit still records the visit.
+  useEffect(() => {
+    const bye = () => { if (!demoRef.current?.preview) saveVisit(session.current, demoRef.current?.booth ?? kioskBooth()); };
+    window.addEventListener("pagehide", bye);
+    return () => window.removeEventListener("pagehide", bye);
+  }, []);
 
   // Show what the business portal published; check for a newer version every minute.
+  // With ?preview=1 ("Try it" in the portal) show the portal's current draft instead, and reload it whenever the
+  // portal saves a new one.
+  const [preview, setPreview] = useState(false);
+  // The preview tab was opened by the portal's Try it: close it and go back there. If the browser won't let this tab
+  // close (it was opened some other way), go to the portal instead.
+  const exitPreview = () => {
+    window.close();
+    setTimeout(() => { if (!window.closed) window.location.href = "/business"; }, 150);
+  };
+  // Before the first paint, so a preview never flashes the built-in sample content.
+  useLayoutEffect(() => {
+    if (new URLSearchParams(window.location.search).has("preview")) setPreview(true);
+  }, []);
   useEffect(() => {
     let cancelled = false;
-    const load = () => loadPublishedDemo().then((d) => {
-      if (!cancelled) setDemo((prev) => (d && prev?.publishedAt === d.publishedAt ? prev : d));
+    const isPreview = new URLSearchParams(window.location.search).has("preview");
+    const load = () => (isPreview ? loadPreviewDemo() : loadPublishedDemo()).catch(() => null).then((d) => {
+      if (cancelled) return;
+      setDemoLoaded(true);
+      setDemo((prev) => (d && prev?.publishedAt === d.publishedAt ? prev : d));
     });
     load();
+    if (isPreview) {
+      const stop = watchPreview(load);
+      const onShow = () => { if (document.visibilityState === "visible") load(); };
+      document.addEventListener("visibilitychange", onShow);
+      return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onShow); };
+    }
     const id = setInterval(load, 60000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
@@ -86,13 +265,20 @@ export default function Kiosk() {
   useEffect(() => {
     if (!fileKey || !demo) return;
     let cancelled = false;
-    loadPublishedModelFile(demo).then((f) => {
-      if (!cancelled && f) setModelFile({ key: fileKey, ...f });
-    });
-    return () => { cancelled = true; };
+    // Don't wait forever on a slow connection: after 30 s show the model's pictures instead.
+    const slow = setTimeout(() => setModelGaveUp(fileKey), 30000);
+    loadPublishedModelFile(demo)
+      .catch(() => null)
+      .then((f) => {
+        if (cancelled) return;
+        if (f) setModelFile({ key: fileKey, ...f });
+        else setModelGaveUp(fileKey);
+      });
+    return () => { cancelled = true; clearTimeout(slow); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the published file changes
   }, [fileKey]);
   const liveFile = modelFile && modelFile.key === fileKey ? modelFile : null;
+  const loading = !demoLoaded || (!!fileKey && !liveFile && modelGaveUp !== fileKey);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -121,9 +307,29 @@ export default function Kiosk() {
     dwellFired: false,
     activeRow: null as number | null,
     modelPart: null as string | null,
+    partCand: null as string | null, // the part under the pointer, before it has settled
+    partSince: 0,
+    partTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     rowFromHover: false,
     edge: null as Edge | null,
     edgeSince: 0,
+    // Hold and pinch on the model
+    zoneSince: 0, // when the pointer came over the model (0 = not over it)
+    zoneLeft: 0, // when it last left it
+    holding: false,
+    zoomed: false, // zoomed in on a part: stays until the visitor pinches in
+    zoomPart: null as string | null, // the part zoomed in on
+    zoomOrigin: "50% 50%",
+    zoomShift: [0, 0] as [number, number],
+    zoomScale: 1.6,
+    // Pinch tracking for the pointing hand and the visitor's other hand (zoom only).
+    pinch: [newPinch(), newPinch()] as [PinchTrack, PinchTrack],
+    pinchQuiet: 0,
+    otherSeen: 0, // when the visitor's other hand was last in view
+    wheelAcc: 0,
+    wheelAt: 0,
+    touchD0: 0,
+    leaveTimer: undefined as ReturnType<typeof setTimeout> | undefined,
   });
 
   const bump = useCallback(() => setView({ ...session.current, time: { ...session.current.time }, picked: [...session.current.picked] }), []);
@@ -173,7 +379,11 @@ export default function Kiosk() {
   );
 
   const resetVisitor = useCallback(() => {
+    // The visitor is done: a booth's kiosk records what they did (not in a Try it preview).
+    if (!demoRef.current?.preview) saveVisit(session.current, demoRef.current?.booth ?? kioskBooth());
     session.current = newSession();
+    Object.assign(ix.current, { zoomed: false, zoomPart: null, holding: false, zoneSince: 0 });
+    setHold(NO_HOLD);
     ix.current.screen = "hub";
     setScreen("hub");
     pickTopic(DEFAULT_TOPIC, false);
@@ -192,7 +402,7 @@ export default function Kiosk() {
     (method: LeadMethod, kind: LeadKind) => {
       if (kind === "brochure") session.current.sent = method;
       else session.current.contacted = true;
-      saveLead(session.current, method, kind);
+      saveLead(session.current, method, kind, demoRef.current?.preview ? null : (demoRef.current?.booth ?? kioskBooth()));
       bump();
     },
     [bump],
@@ -207,7 +417,7 @@ export default function Kiosk() {
       const s = ix.current;
       const tp = TOPICS[s.topic];
       if (s.screen !== "hub" || !PART_TOPICS.has(tp.id) || (dir !== "up" && dir !== "down")) return;
-      const rows = demoRef.current?.sections.find((x) => x.id === tp.id)?.rows.length ?? tp.rows.length;
+      const rows = demoRef.current ? (demoRef.current.sections.find((x) => x.id === tp.id)?.rows.length ?? 0) : tp.rows.length;
       const next = dir === "down" ? (s.activeRow === null ? 0 : s.activeRow + 1) : s.activeRow === null ? rows - 1 : s.activeRow - 1;
       const row = Math.min(Math.max(next, 0), rows - 1);
       s.activeRow = row;
@@ -216,6 +426,108 @@ export default function Kiosk() {
     },
     [markPresent],
   );
+
+  // ---- Hold and pinch on the model --------------------------------------------
+  // Holding over the model stops it turning (and on How it works / Specs pulls the pointed part out). A pinch out
+  // (fingers spreading apart) zooms in on the part nearest where the visitor points, and it stays zoomed in, with that
+  // part's details on the right, until they pinch in.
+  const pushHold = useCallback(() => {
+    const s = ix.current;
+    setHold((h) =>
+      h.holding === s.holding && h.part === s.modelPart && h.zoomed === s.zoomed && h.zoomPart === s.zoomPart && h.origin === s.zoomOrigin
+        ? h
+        : { holding: s.holding, part: s.modelPart, zoomed: s.zoomed, zoomPart: s.zoomPart, origin: s.zoomOrigin, shift: s.zoomShift, scale: s.zoomScale },
+    );
+  }, []);
+  /** Is the point over the model's area (not just one of its parts)? */
+  const overModel = (x: number, y: number, margin = { l: 0, r: 0, t: 0, b: 0 }) => {
+    const zone = document.querySelector("[data-model-zone]");
+    if (!zone) return false;
+    const r = zone.getBoundingClientRect();
+    const k = r.width / MODEL_AREA.w; // stage px → screen px
+    return x >= r.left - margin.l * k && x <= r.right + margin.r * k && y >= r.top - margin.t * k && y <= r.bottom + margin.b * k;
+  };
+  /** Fit the zoomed part whole in the middle of the screen: scaled so it fills ZOOM_FIT, centred on ZOOM_CENTER. */
+  const aimZoom = useCallback(() => {
+    const s = ix.current;
+    const box = s.zoomPart ? partBox(s.zoomPart) : null;
+    const zone = document.querySelector("[data-model-zone]")?.getBoundingClientRect();
+    if (!box || !zone) return pushHold();
+    // Screen px → stage px, then undo the current zoom to get where the part sits unzoomed.
+    const k = zone.width / MODEL_AREA.w;
+    const toStage = (x: number, y: number) => [MODEL_AREA.x + (x - zone.left) / k, MODEL_AREA.y + (y - zone.top) / k];
+    const [l, t] = toStage(box.l, box.t);
+    const [r, b] = toStage(box.r, box.b);
+    const [tx, ty] = s.zoomShift, sc = s.zoomScale;
+    const L = (l - tx) / sc, T = (t - ty) / sc, R = (r - tx) / sc, B = (b - ty) / sc;
+    const scale = Math.min(Math.max(Math.min(ZOOM_FIT.w / Math.max(R - L, 1), ZOOM_FIT.h / Math.max(B - T, 1)), 1), 6);
+    s.zoomScale = scale;
+    s.zoomShift = [ZOOM_CENTER.x - scale * ((L + R) / 2), ZOOM_CENTER.y - scale * ((T + B) / 2)];
+    s.zoomOrigin = "0px 0px";
+    pushHold();
+  }, [pushHold]);
+  /** Zoom in on the part nearest (x, y). Only on the topics whose parts come apart (How it works, Specs). */
+  const zoomIn = useCallback((x: number, y: number) => {
+    const s = ix.current;
+    if (s.zoomed || s.screen !== "hub" || !PART_TOPICS.has(TOPICS[s.topic].id) || !overModel(x, y, ZOOM_MARGIN)) return false;
+    const near = nearestPart(x, y);
+    if (!near) return false;
+    s.zoomed = true;
+    s.zoomPart = near.part;
+    s.zoomShift = [0, 0];
+    s.zoomScale = 1;
+    pushHold();
+    // The model freezes as it is the moment the zoom starts; once that has drawn (two frames), move the part to the
+    // centre in one smooth step. Nothing moves after that until the visitor zooms out.
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (ix.current.zoomPart === near.part) aimZoom(); }));
+    if (!session.current.zoomed.includes(near.part)) session.current.zoomed.push(near.part);
+    return true;
+  }, [aimZoom, pushHold]);
+  const zoomOut = useCallback(() => {
+    const s = ix.current;
+    if (!s.zoomed) return false;
+    s.zoomed = false;
+    s.zoomPart = null;
+    pushHold();
+    return true;
+  }, [pushHold]);
+  const updateHold = useCallback((x: number, y: number, source: "hand" | "mouse", now: number) => {
+    const s = ix.current;
+    const inside = s.screen === "hub" && overModel(x, y);
+    clearTimeout(s.leaveTimer);
+    if (inside) {
+      if (!s.zoneSince) s.zoneSince = now;
+      s.zoneLeft = 0;
+    } else if (s.zoneSince) {
+      if (!s.zoneLeft) s.zoneLeft = now;
+      if (now - s.zoneLeft > HOLD_GRACE_MS) s.zoneSince = 0;
+      // A mouse that stops moving off the model still lets go once the grace time is up.
+      else s.leaveTimer = setTimeout(() => updateHoldRef.current(x, y, source, performance.now()), HOLD_GRACE_MS - (now - s.zoneLeft) + 20);
+    }
+    s.holding = !!s.zoneSince && now - s.zoneSince >= HOLD_MS[source];
+    // A pointer that comes to rest on the model before the hold time is up still holds once it is.
+    if (inside && !s.holding) s.leaveTimer = setTimeout(() => updateHoldRef.current(x, y, source, performance.now()), HOLD_MS[source] - (now - s.zoneSince) + 20);
+    pushHold();
+  }, [pushHold]);
+  const updateHoldRef = useRef(updateHold);
+  useEffect(() => {
+    updateHoldRef.current = updateHold;
+  }, [updateHold]);
+  /** The pointer is gone (hand out of view, mouse left). A zoom stays until the visitor pinches in. */
+  const releaseHold = useCallback(() => {
+    const s = ix.current;
+    s.zoneSince = 0;
+    s.holding = false;
+    s.pinch = [newPinch(), newPinch()];
+    pushHold();
+  }, [pushHold]);
+  // A new topic or screen starts un-zoomed.
+  useEffect(() => {
+    const s = ix.current;
+    s.zoomed = false;
+    s.zoomPart = null;
+    pushHold();
+  }, [topic, screen, pushHold]);
 
   // ---- Pointing: whatever the hand (or mouse) is over ------------------------
   // Hands press things by holding still over them (dwell); the mouse only dwells on topics and clicks the rest.
@@ -240,6 +552,7 @@ export default function Kiosk() {
     const cursor = cursorRef.current;
     cursor?.toggleAttribute("data-over", !!target);
     cursor?.toggleAttribute("data-dwelling", !!target && !s.dwellFired);
+    updateHold(x, y, source, now);
 
     // In swipe mode a hand picks rows by swiping, so its pointer doesn't also hover them.
     if (source === "hand" && swipeModeRef.current) return;
@@ -247,9 +560,23 @@ export default function Kiosk() {
     // A part of the model under the pointer (sample earbud slices, or the uploaded model's 3D view).
     let part: string | null = hit?.closest("[data-model-part]")?.getAttribute("data-model-part") ?? null;
     if (!part && hit instanceof HTMLCanvasElement && hit.hasAttribute("data-live-model")) part = livePickers.get(hit)?.(x, y) ?? null;
-    if (part !== s.modelPart) {
+    // Steady the highlight: a new part (or leaving the parts) only takes over once the pointer has stayed on it a
+    // moment, so a hand wobbling on the edge between two parts doesn't make them flicker.
+    if (part !== s.partCand) {
+      s.partCand = part;
+      s.partSince = now;
+    }
+    if (part !== s.modelPart && now - s.partSince >= (part ? PART_SETTLE_MS : PART_LEAVE_MS)[source === "hand" ? 0 : 1]) {
       s.modelPart = part;
       setModelPart(part);
+    } else if (part !== s.modelPart) {
+      clearTimeout(s.partTimer);
+      s.partTimer = setTimeout(() => {
+        if (ix.current.partCand === part && ix.current.modelPart !== part) {
+          ix.current.modelPart = part;
+          setModelPart(part);
+        }
+      }, (part ? PART_SETTLE_MS : PART_LEAVE_MS)[source === "hand" ? 0 : 1] - (now - s.partSince) + 10);
     }
 
     const rowEl = hit?.closest("[data-row]");
@@ -259,7 +586,8 @@ export default function Kiosk() {
       s.rowFromHover = row !== null;
       setActiveRow(row);
     }
-  }, []);
+    if (part !== null || !s.holding) pushHold();
+  }, [updateHold, pushHold]);
 
   const pointerGone = useCallback(() => {
     const s = ix.current;
@@ -270,11 +598,14 @@ export default function Kiosk() {
       s.activeRow = null;
       setActiveRow(null);
     }
+    clearTimeout(s.partTimer);
+    s.partCand = null;
     if (s.modelPart) {
       s.modelPart = null;
       setModelPart(null);
     }
-  }, []);
+    releaseHold();
+  }, [releaseHold]);
 
   // ---- Hand input -------------------------------------------------------
   const onHand = useCallback(
@@ -318,7 +649,7 @@ export default function Kiosk() {
       const swipe = teach || !swiping ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
       if (swipe) onSwipe(swipe.dir);
 
-      if (dbg.on) {
+      if (dbg.on && swiping) { // pointing: the pinch line below
         if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
         const miss = swipes.current.miss;
         const text = swiping ? `${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}` : `POINT · ${dbg.stats}`;
@@ -359,8 +690,38 @@ export default function Kiosk() {
       if (s.trail.length > TRAIL_LEN) s.trail.shift();
       trailRef.current?.setAttribute("points", s.trail.map((p) => p.join(",")).join(" "));
       pointAt(s.x, s.y, "hand", now);
+
+      // Pinch: spreading the thumb and index fingertips apart zooms in on the nearest part (as on a touchscreen) and it
+      // stays zoomed; bringing them back together, and keeping them together for a moment, zooms out. Measured in hand
+      // sizes so it works near and far from the camera. A hand that's moving, turning, near the edge of the camera's
+      // view or leaving it never counts, so taking the hand away doesn't close the zoom.
+      // Either hand can pinch: the pointing hand, or the visitor's other hand while the pointing hand holds still on a
+      // part (then the zoom goes where the pointer is).
+      if (swiping) return;
+      const fire = (open: boolean, x: number, y: number) => {
+        if (now < s.pinchQuiet) return false;
+        const fired = open ? zoomIn(x, y) : zoomOut();
+        if (fired) {
+          s.pinch = [newPinch(), newPinch()];
+          s.pinchQuiet = now + PINCH_QUIET_MS;
+        }
+        return fired;
+      };
+      pinchStep(s.pinch[0], hand.landmarks, hand.palmX, hand.palmY, hand.aspect, now, s.x, s.y, s.zoomed, true, fire);
+      if (hand.other) {
+        s.otherSeen = now;
+        pinchStep(s.pinch[1], hand.other.landmarks, hand.other.palmX, hand.other.palmY, hand.aspect, now, s.x, s.y, s.zoomed, false, fire);
+      } else if (now - s.otherSeen > OTHER_LOST_MS) s.pinch[1] = newPinch();
+      if (dbg.on) {
+        const o = hand.other ? `2ND HAND: ZOOM · SPREAD ${s.pinch[1].spread.toFixed(1)}` : hand.otherIgnored ? `2ND HAND IGNORED (${hand.otherIgnored === "far" ? "TOO FAR APART" : "SIZE DIFFERS"})` : "2ND HAND: NONE";
+        const text = `POINT · ${dbg.stats} · SPREAD ${s.pinch[0].spread.toFixed(1)} · ${o}${s.zoomed ? " · ZOOMED" : ""}`;
+        if (text !== dbg.text) {
+          dbg.text = text;
+          setDebug(text);
+        }
+      }
     },
-    [onSwipe, pointAt, pointerGone, markPresent],
+    [onSwipe, pointAt, pointerGone, markPresent, zoomIn, zoomOut],
   );
 
   const status = useHandTracking(videoRef, camCanvasRef, onHand, ACCENT, cameraOn);
@@ -436,6 +797,51 @@ export default function Kiosk() {
         else document.documentElement.requestFullscreen().catch(() => {});
       }
     };
+    // Trackpad pinch (the browser reports it as a wheel with Ctrl) or the scroll wheel: up / spread zooms in on the part
+    // nearest the pointer, down / pinch zooms back out.
+    const wheel = (e: WheelEvent) => {
+      const s = ix.current;
+      if (s.screen !== "hub" || (!s.zoomed && !overModel(e.clientX, e.clientY))) return;
+      e.preventDefault();
+      const now = performance.now();
+      markPresent(now);
+      if (now - s.wheelAt > 300) s.wheelAcc = 0;
+      s.wheelAt = now;
+      s.wheelAcc += e.deltaY * (e.ctrlKey ? 5 : 1);
+      if (s.wheelAcc <= -WHEEL_STEP && zoomIn(e.clientX, e.clientY)) s.wheelAcc = 0;
+      else if (s.wheelAcc >= WHEEL_STEP && zoomOut()) s.wheelAcc = 0;
+    };
+    // Touchscreen: a finger on the model holds it; two fingers spreading apart zoom in, pinching together zooms out.
+    let touchTimer: ReturnType<typeof setTimeout> | undefined;
+    const touchDist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const touchMid = (t: TouchList) => [(t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2] as const;
+    const touchStart = (e: TouchEvent) => {
+      const s = ix.current;
+      const t = e.touches[0];
+      if (s.screen !== "hub" || (!s.zoomed && !overModel(t.clientX, t.clientY))) return;
+      clearTimeout(touchTimer);
+      s.zoneSince = performance.now() - HOLD_MS.mouse;
+      s.holding = true;
+      if (e.touches.length >= 2) s.touchD0 = touchDist(e.touches);
+      pushHold();
+    };
+    const touchMove = (e: TouchEvent) => {
+      const s = ix.current;
+      if (e.touches.length < 2 || !s.touchD0) return;
+      e.preventDefault();
+      const ratio = touchDist(e.touches) / s.touchD0;
+      if (ratio > TOUCH_IN && zoomIn(...touchMid(e.touches))) s.touchD0 = touchDist(e.touches);
+      else if (ratio < TOUCH_OUT && zoomOut()) s.touchD0 = touchDist(e.touches);
+    };
+    const touchEnd = (e: TouchEvent) => {
+      const s = ix.current;
+      if (e.touches.length < 2) s.touchD0 = 0;
+      if (e.touches.length === 0 && s.holding) touchTimer = setTimeout(releaseHold, 1500);
+    };
+    window.addEventListener("wheel", wheel, { passive: false });
+    window.addEventListener("touchstart", touchStart, { passive: true });
+    window.addEventListener("touchmove", touchMove, { passive: false });
+    window.addEventListener("touchend", touchEnd);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerdown", down);
     window.addEventListener("keydown", key);
@@ -443,6 +849,11 @@ export default function Kiosk() {
     window.addEventListener("blur", blur);
     document.documentElement.addEventListener("pointerleave", pointerGone);
     return () => {
+      clearTimeout(touchTimer);
+      window.removeEventListener("wheel", wheel);
+      window.removeEventListener("touchstart", touchStart);
+      window.removeEventListener("touchmove", touchMove);
+      window.removeEventListener("touchend", touchEnd);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener("keydown", key);
@@ -450,7 +861,7 @@ export default function Kiosk() {
       window.removeEventListener("blur", blur);
       document.documentElement.removeEventListener("pointerleave", pointerGone);
     };
-  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor, toggleSwipeMode]);
+  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor, toggleSwipeMode, zoomIn, zoomOut, pushHold, releaseHold]);
 
   // ---- Frame loop: dwell, time per topic, attract loop, reset, explode easing ----
   useEffect(() => {
@@ -466,14 +877,26 @@ export default function Kiosk() {
 
       // Held long enough over something: press it.
       if (s.dwellEl && !s.dwellFired && now - s.dwellSince >= (Number(s.dwellEl.dataset.dwell) || 1000)) {
-        s.dwellFired = true;
-        s.dwellEl.removeAttribute("data-dwelling");
-        cursorRef.current?.removeAttribute("data-dwelling");
-        s.dwellEl.click();
+        const el = s.dwellEl;
+        if (el.hasAttribute("data-dwell-repeat")) {
+          // Keys like Delete keep pressing while the hand stays on them (a little slower after the first press).
+          s.dwellSince = now + 250;
+          el.removeAttribute("data-dwelling");
+          requestAnimationFrame(() => { if (ix.current.dwellEl === el) el.setAttribute("data-dwelling", ""); });
+        } else {
+          s.dwellFired = true;
+          el.removeAttribute("data-dwelling");
+          cursorRef.current?.removeAttribute("data-dwelling");
+        }
+        el.click();
       }
 
       const idle = now - s.lastActive;
-      if (s.present) {
+      // Zoomed in on a part: it stays until the visitor pinches in, even with no hand or finger in view, so they still
+      // count as here (no attract loop, no reset) unless nobody has been seen for a long while.
+      if (s.zoomed && idle < ZOOM_ABANDON_MS) {
+        s.lastCycle = now;
+      } else if (s.present) {
         if (s.screen === "hub") {
           const id = TOPICS[s.topic].id;
           session.current.time[id] = (session.current.time[id] ?? 0) + dt;
@@ -488,7 +911,7 @@ export default function Kiosk() {
         s.lastCycle = now;
         pickTopic(s.topic + 1, false);
       }
-      if (session.current.start && !s.present && idle > (s.screen === "staff" ? RESET_STAFF_MS : RESET_MS)) {
+      if (session.current.start && !s.present && !(s.zoomed && idle < ZOOM_ABANDON_MS) && idle > (s.screen === "staff" ? RESET_STAFF_MS : RESET_MS)) {
         s.lastCycle = now;
         resetVisitor();
       }
@@ -533,25 +956,50 @@ export default function Kiosk() {
       : swipeMode
         ? { title: handVisible ? "SWIPE UP OR DOWN THROUGH THE PARTS" : "RAISE A HAND, THEN SWIPE", sub: "Hold your hand over a topic to switch" }
         : { title: "POINT AT A PART OR A ROW", sub: "The matching part and details light up" };
+  // On a part: tell the visitor about the pinch, and how to get back out of a zoom.
+  const pinchGuide = !partTopic
+    ? null
+    : hold.zoomed
+      ? { title: "PINCH IN TO ZOOM BACK OUT", sub: camOk ? "Bring your thumb and finger together, on either hand" : "Pinch two fingers together, or scroll down" }
+      : hold.holding
+        ? { title: "SPREAD YOUR FINGERS TO ZOOM IN", sub: camOk ? "Thumb and finger apart, on this hand or your other one" : "Spread two fingers near a part, or scroll up" }
+        : null;
+  const hubGuide = pinchGuide ?? rowGuide;
 
   const s = view;
   return (
-    <DemoContext.Provider value={demo}>
+    <DemoContext.Provider value={demo ?? (preview ? EMPTY_PREVIEW : null)}>
     <ModelFileContext.Provider value={liveFile}>
     <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
+        {preview && (
+          <div className={styles.previewTag}>
+            PREVIEW · NOT PUBLISHED
+            <button type="button" className={styles.previewClose} aria-label="Exit the preview" title="Exit the preview" onClick={exitPreview}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+        )}
 
-        {screen === "hub" && (
+        {loading && (
+          <div className={styles.loadingScreen} role="status" aria-live="polite">
+            <span className={styles.loadingSpinner} aria-hidden="true" />
+            <span className={styles.loadingTitle}>LOADING THE DEMO</span>
+            <span className={styles.loadingSub}>{demoLoaded ? "Bringing in the 3D model…" : "One moment…"}</span>
+          </div>
+        )}
+        {!loading && screen === "hub" && (
           <Hub
             topic={topic}
             onPick={(i) => pickTopic(i)}
             activeRow={activeRow}
             modelPart={modelPart}
+            hold={hold}
             onRow={(i) => { ix.current.activeRow = i; ix.current.rowFromHover = false; setActiveRow(i); }}
             explode={explode}
             accent={ACCENT}
-            guide={{ ...rowGuide, sub: tip ?? rowGuide.sub, tip: !!tip }}
+            guide={{ ...hubGuide, sub: tip ?? hubGuide.sub, tip: !!tip }}
             attract={!present}
             onTeam={() => go("staff")}
             onBrochure={() => go("brochure")}
@@ -646,9 +1094,9 @@ export default function Kiosk() {
   );
 }
 
-/** Only How it works and Specs move the model; every other topic shows it whole. */
+/** How it works and Specs show every part fully apart, the same way; every other topic shows the model whole. */
 function topicExplode(i: number) {
-  return PART_TOPICS.has(TOPICS[i].id) ? TOPICS[i].explode : 0;
+  return PART_TOPICS.has(TOPICS[i].id) ? 1 : 0;
 }
 
 function clearDwell(s: { dwellEl: HTMLElement | null; dwellFired: boolean }) {

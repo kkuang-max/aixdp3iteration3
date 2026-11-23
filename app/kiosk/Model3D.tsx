@@ -11,14 +11,16 @@ export default function Model3D<Id extends string>(props: {
   explode: number;
   highlight: readonly Id[];
   interactive?: boolean; // parts can be pointed at (Kiosk reads data-model-part)
+  paused?: boolean; // the visitor is holding over it: stop turning
+  glow?: readonly Id[]; // parts the visitor points at: lit up
 }) {
-  const { geo, accent, explode, highlight } = props;
-  const slices = useMemo(() => buildModel({ geo, w: 460, accent, explode, highlight }), [geo, accent, explode, highlight]);
+  const { geo, accent, explode, highlight, glow } = props;
+  const slices = useMemo(() => buildModel({ geo, w: 460, accent, explode, highlight, glow }), [geo, accent, explode, highlight, glow]);
   return (
     <>
       <div className={styles.modelShadow} />
       <div className={styles.modelWrap} data-interactive={props.interactive ? "" : undefined}>
-        <div className={styles.model}>
+        <div className={styles.model} data-paused={props.paused ? "" : undefined}>
           {slices.map((sl, i) => (
             <svg
               key={i}

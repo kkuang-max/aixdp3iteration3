@@ -3,15 +3,23 @@
 // on the server via /api/kiosk-config so a kiosk on another device picks it up.
 
 import { loadFile, saveFile } from "./fileStore";
+import type { GestureText } from "./gestureText";
 
 export type PublishedSection = { id: string; title: string; rows: { a: string; b: string }[] };
 export type PublishedMapping = { gesture: string; sectionId: string; part: string; mode: string };
 export type PublishedDemo = {
   version: 1;
+  /** A draft opened with "Try it" in the portal: shows exactly what is filled in, nothing else. */
+  preview?: boolean;
+  /** Set by the server for a booth's kiosk: how long the business keeps leads, and the booth it was loaded for. */
+  retentionDays?: number;
+  booth?: string;
   publishedAt: string;
   productName: string;
   sections: PublishedSection[];
   mappings: PublishedMapping[];
+  /** What hold (hover) and pinch show on the model, per part. Older demos don't have it. */
+  gestureText?: GestureText;
   /** An uploaded 3D model, as pictures: the whole model and each mapped part lit up in it. */
   model?: {
     fileName: string;
@@ -27,7 +35,12 @@ export type PublishedDemo = {
 const DB = "playform";
 const STORE = "files";
 const KEY = "published";
+const PREVIEW_KEY = "preview";
+const PREVIEW_CHANNEL = "playform-preview";
 export const MAX_SERVER_BYTES = 4_000_000; // Vercel caps request bodies at 4.5 MB
+/** Every kiosk section shows a headline and at most this many rows. */
+export const MAX_ROWS = 5;
+const capRows = (d: PublishedDemo): PublishedDemo => ({ ...d, sections: d.sections.map((s) => ({ ...s, rows: s.rows.slice(0, MAX_ROWS) })) });
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -76,7 +89,33 @@ export async function publishDemo(demo: PublishedDemo): Promise<{ local: boolean
 }
 
 /** The newest published demo: from the server if it has one, else from this browser. */
+/** The booth this kiosk belongs to: from ?booth= in the address, remembered on this device so a refresh keeps it. */
+export function kioskBooth(): string | null {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get("booth");
+    if (fromUrl) localStorage.setItem("playform.booth", fromUrl);
+    return fromUrl || localStorage.getItem("playform.booth");
+  } catch {
+    return null;
+  }
+}
+
 export async function loadPublishedDemo(): Promise<PublishedDemo | null> {
+  // A booth's kiosk shows only its business's published demo (from the account), never another one.
+  const booth = kioskBooth();
+  if (booth) {
+    try {
+      const res = await fetch(`/api/kiosk-config?booth=${encodeURIComponent(booth)}`, { cache: "no-store" });
+      if (res.ok) {
+        const d = await res.json();
+        if (isDemo(d)) return capRows(d);
+      }
+      // Booth exists but nothing published yet: show an empty demo rather than the sample.
+      if (res.status === 404) return { version: 1, publishedAt: "", productName: "", sections: [], mappings: [], booth };
+    } catch {
+      /* offline: fall through to this device's copy */
+    }
+  }
   let local: PublishedDemo | null = null;
   try {
     const d = await idb<unknown>("readonly", (s) => s.get(KEY));
@@ -94,8 +133,40 @@ export async function loadPublishedDemo(): Promise<PublishedDemo | null> {
   } catch {
     /* offline: expo Wi-Fi */
   }
-  if (local && remote) return Date.parse(remote.publishedAt) >= Date.parse(local.publishedAt) ? remote : local;
-  return remote ?? local;
+  const newest = local && remote ? (Date.parse(remote.publishedAt) >= Date.parse(local.publishedAt) ? remote : local) : (remote ?? local);
+  return newest && capRows(newest);
+}
+
+/** "Try it": keep the portal's current draft for the kiosk preview tab, and tell an open preview to reload. */
+export async function savePreviewDemo(demo: PublishedDemo) {
+  await idb("readwrite", (s) => s.put(demo, PREVIEW_KEY));
+  try {
+    const ch = new BroadcastChannel(PREVIEW_CHANNEL);
+    ch.postMessage("updated");
+    ch.close();
+  } catch {
+    /* no BroadcastChannel: the preview reloads when its tab is shown */
+  }
+}
+
+export async function loadPreviewDemo(): Promise<PublishedDemo | null> {
+  try {
+    const d = await idb<unknown>("readonly", (s) => s.get(PREVIEW_KEY));
+    return isDemo(d) ? capRows(d) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Calls `onChange` whenever the portal saves a new draft with "Try it". */
+export function watchPreview(onChange: () => void): () => void {
+  try {
+    const ch = new BroadcastChannel(PREVIEW_CHANNEL);
+    ch.onmessage = onChange;
+    return () => ch.close();
+  } catch {
+    return () => {};
+  }
 }
 
 export async function unpublishLocal() {
@@ -147,9 +218,15 @@ export async function publishModelFile(file: { name: string; type: string; data:
 export async function loadPublishedModelFile(demo: PublishedDemo): Promise<{ name: string; data: ArrayBuffer } | null> {
   const file = demo.model?.file;
   if (!file) return null;
+  if (demo.preview) {
+    // The draft's model is the one the portal is working on.
+    const draft = await loadFile("model");
+    return draft && draft.name === file.name ? { name: draft.name, data: draft.data } : null;
+  }
   if (file.path) {
     try {
-      const res = await fetch(`/api/kiosk-model?path=${encodeURIComponent(file.path)}`);
+      const booth = demo.booth ? `&booth=${encodeURIComponent(demo.booth)}` : "";
+      const res = await fetch(`/api/kiosk-model?path=${encodeURIComponent(file.path)}${booth}`);
       if (res.ok) return { name: file.name, data: await res.arrayBuffer() };
     } catch {
       /* offline: try the local copy */

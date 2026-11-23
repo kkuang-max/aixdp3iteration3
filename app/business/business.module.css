@@ -1,5 +1,6 @@
-/* Business portal. Same 1280×720 artboard, background and type as the kiosk (see the ASK Figma,
-   "Business View" section: Auto 1–3, Manual 1–6 and Interactions 1–2). The artboard is scaled to fit. */
+/* Business portal. Same 1280×720 artboard, background and type as the kiosk. Follows the ASK Figma: the Playform
+   design system (tokens, text styles, business components) and the "Business View · rebuilt on the design system"
+   frames. The artboard is scaled to fit. */
 
 .viewport {
   position: fixed;
@@ -62,12 +63,12 @@
 /* Auto / manual switch (top right). */
 .modeSwitch {
   position: absolute;
-  right: 72px;
+  right: 215px;
   top: 12px;
   z-index: 3;
   display: flex;
   padding: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 999px;
   background: rgba(12, 15, 28, 0.5);
 }
@@ -156,9 +157,14 @@
   justify-content: center;
 }
 
-.stepDot[data-state="done"],
-.stepDot[data-state="current"] {
+.stepDot[data-state="done"] {
   background: #c8d8ff;
+}
+
+/* Current step: a ring with a centre dot, so it differs from the steps to come by shape, not only colour (WCAG 1.4.1). */
+.stepDot[data-state="current"] {
+  background: radial-gradient(circle, #c8d8ff 0 6px, transparent 6.5px);
+  box-shadow: inset 0 0 0 2.5px #c8d8ff;
 }
 
 /* ---- Shared pieces ---- */
@@ -227,24 +233,13 @@
   font-weight: 500;
 }
 
-.numCircle {
-  width: 18px;
-  height: 18px;
-  border: 1.3px solid #eef1f8;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-}
-
 .field {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   height: 42px;
   padding: 0 13px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
   font-size: 15px;
@@ -279,7 +274,7 @@
   width: 100%;
   height: 42px;
   padding: 0 34px 0 13px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
   font-size: 15px;
@@ -475,8 +470,7 @@
 }
 
 .drop,
-.dropDone,
-.dropWide {
+.dropDone {
   position: relative;
   box-sizing: border-box;
   border-radius: 14px;
@@ -488,18 +482,15 @@
   text-align: center;
 }
 
-.drop,
-.dropWide {
-  border: 1px solid rgba(255, 255, 255, 0.28);
+.drop {
+  border: 1px solid rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
   color: #b5bacb;
 }
 
 .drop:hover,
-.dropWide:hover,
-.drop:focus-within,
-.dropWide:focus-within {
+.drop:focus-within {
   border-color: rgba(200, 216, 255, 0.7);
 }
 
@@ -508,15 +499,13 @@
   font-size: 17px;
 }
 
-.drop b,
-.dropWide b {
+.drop b {
   margin-top: 8px;
   font-size: 17px;
   font-weight: 700;
 }
 
-.drop span,
-.dropWide span {
+.drop span {
   color: #9aa0b3;
   overflow-wrap: anywhere;
 }
@@ -565,97 +554,7 @@
 .manualHint .textLink {
   font-size: 15px;
 }
-
 /* ---- Auto 2 · review ---- */
-.reviewGrid {
-  position: absolute;
-  left: 80px;
-  top: 166px;
-  width: 1086px;
-  height: 444px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: 1fr 1fr;
-  gap: 16px;
-}
-
-.reviewCard {
-  box-sizing: border-box;
-  min-height: 0;
-  padding: 21px 23px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 24px;
-  background: rgba(12, 15, 28, 0.35);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-}
-
-.reviewCard[data-look] {
-  border-color: rgba(242, 194, 122, 0.55);
-}
-
-.reviewHead {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.reviewHead b {
-  font-size: 13px;
-  letter-spacing: 0.2em;
-}
-
-.badgeReady,
-.badgeLook {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.badgeReady {
-  color: #c8d8ff;
-  background: rgba(200, 216, 255, 0.14);
-}
-
-.badgeLook {
-  color: #f2c27a;
-  background: rgba(242, 194, 122, 0.14);
-}
-
-.reviewTitle {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-.reviewBody {
-  font-size: 14px;
-  line-height: 1.45;
-  color: #c9cfdd;
-}
-
-.reviewFoot {
-  margin-top: auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: #aeb4c6;
-}
-
-.reviewFoot .smallPill {
-  height: 36px;
-  padding: 0 15px;
-  font-weight: 700;
-}
-
-.lookNote {
-  font-size: 14px;
-  color: #f2c27a;
-}
 
 /* ---- Auto 3 · edit a section ---- */
 .sideNav {
@@ -692,23 +591,73 @@
   font-weight: 700;
 }
 
-.lookDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #f2c27a;
-}
-
 .editCard {
   position: absolute;
   left: 308px;
   top: 151px;
   width: 530px;
   height: 451px;
-  padding: 21px 23px;
+  padding: 22px 24px 21px;
+  background: #1b2036;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 11px;
+}
+
+.editHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.editHead h2 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.editHint {
+  margin: -6px 0 9px;
+  font-size: 17px;
+  color: #b9c0d3;
+}
+
+/* Section status (Figma component "Status"): Good, Needs attention, Insufficient. Each has its own icon shape (✓ / ! / empty ring), not colour alone. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  padding-top: 2px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.statusIcon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.status[data-status="good"],
+.statusIcon[data-status="good"] {
+  color: #5ac064;
+}
+
+.status[data-status="attention"],
+.statusIcon[data-status="attention"] {
+  color: #f2c27a;
+}
+
+.status[data-status="insufficient"],
+.statusIcon[data-status="insufficient"] {
+  color: #f0a3a3;
+}
+
+.lookNoteSmall {
+  font-size: 12px;
+  color: #f2c27a;
 }
 
 .editRows {
@@ -740,6 +689,7 @@
   width: 300px;
   padding: 21px;
   border-radius: 24px;
+  background: #1b2036;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -762,7 +712,7 @@
   height: 263px;
   padding: 21px;
   border-radius: 24px;
-  border-color: rgba(200, 216, 255, 0.45);
+  background: #1b2036;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -782,9 +732,28 @@
 .kioskPreviewSmall {
   flex: 1;
   min-height: 0;
-  padding: 15px 17px;
+  padding: 8px 17px 15px;
+  border: none;
   border-radius: 14px;
+  background: none;
   overflow: hidden;
+}
+
+/* The AI preview card draws the panel straight on the card. */
+.kioskPreviewFlat {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+
+.kioskPreviewFlat .kioskTitle {
+  margin: 6px 0;
+}
+
+.kioskPreviewFlat .kioskRow {
+  padding: 8px 0 7px;
+  gap: 4px;
 }
 
 .kioskKicker {
@@ -829,59 +798,36 @@
 .manualLeft {
   position: absolute;
   left: 80px;
-  top: 151px;
-  width: 532px;
-  height: 451px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  top: 168px;
+  width: 440px;
+  height: 434px;
 }
 
 .manualRight {
   position: absolute;
-  left: 680px;
-  top: 78px;
-  width: 488px;
-  height: 524px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  left: 561px;
+  top: 168px;
+  width: 607px;
+  height: 434px;
+  border-radius: 24px;
+  background: #1b2036;
+}
+
+/* Manual: the 7-step progress bar spans the right-hand column (608px). */
+.progressAt {
+  position: absolute;
+  left: 561px;
+  top: 81px;
+}
+
+.stepperLong .stepLine {
+  width: 64px;
 }
 
 .dropTall {
-  height: 451px;
+  box-sizing: border-box;
   border-radius: 28px;
   font-size: 17px;
-}
-
-.uploadStrip {
-  padding: 22px 28px;
-}
-
-.dropWide {
-  height: 84px;
-  flex-direction: row;
-  gap: 14px;
-}
-
-.dropWide b {
-  margin: 0;
-}
-
-.or {
-  text-align: center;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-}
-
-.pasteCard {
-  flex: 1;
-  min-height: 0;
-  padding: 22px 28px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .textarea {
@@ -890,49 +836,27 @@
   box-sizing: border-box;
   resize: none;
   padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   font-size: 16px !important;
   line-height: 1.5 !important;
 }
 
-.uploaded {
-  display: flex;
-  flex-direction: column;
-}
-
-.uploadedHead {
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 12px;
-  letter-spacing: 0.22em;
-  color: #aeb4c6;
-}
-
-.uploadedFiles {
-  display: flex;
-  gap: 20px;
-  padding: 12px 0 0;
-  font-size: 15px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.uploadedFile {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .partsCard {
-  flex: 1;
-  min-height: 0;
-  padding: 23px;
-  border-radius: 24px;
+  padding: 22px 23px 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.partsFile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 320px;
+  font-size: 12px;
+  color: #aeb4c6;
 }
 
 .partsHead {
@@ -944,7 +868,7 @@
 .partsPreview {
   flex: 1;
   min-height: 0;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border: 1px dashed rgba(255, 255, 255, 0.4);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
   display: flex;
@@ -954,15 +878,137 @@
   pointer-events: none;
 }
 
-.previewCard {
-  flex: 1;
-  min-height: 0;
-  padding: 18px 20px;
-  border-radius: 24px;
-  border-color: rgba(200, 216, 255, 0.45);
+/* Manual: the "type, paste, or upload" box (Figma component "card"). */
+.inputCard {
+  padding: 24px 29px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 21px;
+}
+
+.inputBox {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.inputBox:focus-within {
+  border-color: rgba(200, 216, 255, 0.55);
+}
+
+.fileChip {
+  align-self: flex-start;
+  margin: 14px 14px 0;
+  padding: 5px 6px 5px 15px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 8px;
+  background: #d1d1d2;
+  color: #1b2036;
+}
+
+.fileChipText {
+  width: 118px;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.fileChipText b,
+.fileChipText span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fileChip button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fileChip button:hover {
+  background: rgba(27, 32, 54, 0.1);
+}
+
+.inputText {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  padding: 14px 19px;
+  border: none;
+  background: transparent;
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+}
+
+.inputText:focus {
+  outline: none;
+}
+
+.inputText::placeholder {
+  color: #9aa0b3;
+}
+
+.attachBtn {
+  align-self: flex-end;
+  margin: 0 10px 12px;
+  height: 35px;
+  padding: 0 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(20, 24, 40, 0.6);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+}
+
+.attachBtn:hover,
+.attachBtn:focus-within {
+  border-color: #eef1f8;
+}
+
+.attachBtn[data-disabled] {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Manual: the AI preview of the kiosk panel (Figma component "card/AI Preview"). */
+.previewCard {
+  padding: 18px 39px 22px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.previewCard[data-editing] {
+  padding: 18px 20px 20px;
+}
+
+.previewTitle {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: #c8d8ff;
 }
 
 .previewHead {
@@ -980,22 +1026,14 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-}
-
-.previewEdit {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 16px;
 }
 
-.previewEditRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.previewEdit .dashedBtn {
-  align-self: flex-start;
+.previewBox > .cellGrid {
+  align-self: stretch;
 }
 
 /* ---- Interactions 1 · gesture list ---- */
@@ -1021,7 +1059,7 @@
 .gestureHead,
 .gestureRow {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) 144px 144px 20px;
+  grid-template-columns: 24px 130px 160px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
 }
@@ -1036,6 +1074,7 @@
   color: #aeb4c6;
 }
 
+/* Room around the rows so a highlighted row's box is never clipped by the scrolling list. */
 .gestureRows {
   flex: 1;
   min-height: 0;
@@ -1043,7 +1082,8 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 12px 4px 4px;
+  margin: 0 -8px;
+  padding: 12px 12px 6px;
 }
 
 .gestureName {
@@ -1069,7 +1109,7 @@
 
 .gestureSelect select:hover,
 .gestureSelect select:focus {
-  border-color: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.4);
   padding-left: 8px;
 }
 
@@ -1472,13 +1512,6 @@
   background: #2a3354;
 }
 
-.reviewClamp {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .fill {
   flex: 1;
   display: flex;
@@ -1564,7 +1597,7 @@
 .modalClose {
   width: 32px;
   height: 32px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 50%;
   background: transparent;
   font-size: 20px;
@@ -1588,14 +1621,6 @@
   font-size: 16px;
   line-height: 1.55;
   color: #c9cfdd;
-}
-
-.modalBody .reviewTitle {
-  font-size: 18px;
-}
-
-.modalBody .reviewBody {
-  margin-top: 8px;
 }
 
 .fullSection {
@@ -1642,12 +1667,12 @@
 
 .restartBtn {
   position: absolute;
-  right: 252px;
+  right: 397px;
   top: 14px;
   z-index: 3;
   height: 30px;
   padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 999px;
   background: rgba(12, 15, 28, 0.5);
   display: flex;
@@ -1675,3 +1700,651 @@
   font-weight: 700;
   letter-spacing: 0.16em;
 }
+
+/* ---- Sheets-style cells (headline and row text in the editors) ---- */
+.cellGrid {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.cellWrap {
+  position: relative;
+  min-width: 0;
+}
+
+.cellWrap[data-span] {
+  grid-column: 1 / -1;
+}
+
+.cell {
+  box-sizing: border-box;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cell:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.cellText {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 13px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 15px !important;
+  cursor: text !important;
+}
+
+.cell:has(.cellExpand) .cellText {
+  padding-right: 4px;
+}
+
+.cellText[data-bold] {
+  font-weight: 600;
+}
+
+.cellText[data-empty] {
+  color: #9aa0b3 !important;
+}
+
+.cellText:focus-visible {
+  outline: 2px solid #c8d8ff;
+  outline-offset: -2px;
+}
+
+.cellExpand {
+  flex: none;
+  width: 36px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0 10px 10px 0;
+  background: transparent;
+  color: #a9aec2 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cellExpand:hover {
+  color: #eef1f8 !important;
+}
+
+/* Open cells are drawn here, over everything on the artboard except dialogs. */
+.cellLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.cellEditor {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 2px solid #c8d8ff;
+  border-radius: 10px;
+  background: #272c44;
+  color: #eef1f8;
+  font-size: 15px !important;
+  line-height: 22px !important;
+  resize: none;
+  overflow-y: auto;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+
+.cellEditor[data-bold] {
+  font-weight: 600 !important;
+}
+
+.cellEditor:focus {
+  outline: none;
+}
+
+.cellEditor::placeholder {
+  color: #9aa0b3;
+}
+
+/* Manual: a scrolling preview keeps its fade only until the end is in view. */
+.clampInner[data-scroll] {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(200, 216, 255, 0.35) transparent;
+}
+
+.clampInner[data-scroll]:focus-visible {
+  outline: 2px solid rgba(200, 216, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.clamp:has(.clampInner[data-scroll]) .moreBtn {
+  right: 10px;
+}
+
+/* Manual: send what was typed, pasted or attached to the AI. */
+.inputFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -6px;
+}
+
+.submitBtn {
+  height: 38px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 999px;
+  background: #c8d8ff;
+  color: #1b2036 !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: #dfe8ff;
+}
+
+.submitBtn:disabled {
+  opacity: 0.4;
+  cursor: default !important;
+}
+
+.previewCard {
+  position: relative;
+}
+
+.previewBusy {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 0 40px;
+  border-radius: inherit;
+  background: rgba(13, 17, 28, 0.82);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  font-size: 15px;
+  color: #c9cfdd;
+}
+
+.previewBusy b {
+  font-size: 18px;
+  font-weight: 600;
+  color: #eef1f8;
+}
+
+.dashedBtn:disabled {
+  opacity: 0.35;
+  cursor: default !important;
+}
+
+/* ---- Empty states: nothing is filled in until the exhibitor adds it ---- */
+.emptyNote {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #9aa0b3;
+}
+
+.emptyPreview {
+  flex: 1;
+  margin: 0;
+  padding: 0 40px;
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #9aa0b3;
+}
+
+.partsPreview .emptyNote {
+  max-width: 280px;
+  text-align: center;
+}
+
+.viewerEmpty {
+  padding: 0 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.kioskTitle[data-empty] {
+  color: #9aa0b3;
+  font-weight: 400;
+}
+
+.outlineSmall:disabled,
+.smallPill:disabled {
+  opacity: 0.4;
+  cursor: default !important;
+}
+
+.viewerEmpty label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* ---- Interactions: what each gesture shows, per part (Gesture → Does → What it says) ---- */
+.gestureRows {
+  gap: 12px;
+}
+
+.gestureRow {
+  cursor: default;
+}
+
+.gestureIcon {
+  display: flex;
+  justify-content: center;
+  color: #c9cfdd;
+}
+
+.gestureCell {
+  box-sizing: border-box;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gestureDoes {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #c9cfdd;
+}
+
+.gestureFixed {
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  color: #9aa0b3;
+}
+
+.gestureRow .cell {
+  border-color: rgba(200, 216, 255, 0.45);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gestureNote {
+  text-align: right;
+}
+
+.usedChipRemove {
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #c8d8ff !important;
+  font-size: 13px !important;
+  line-height: 1;
+}
+
+.usedChipRemove:hover {
+  background: rgba(200, 216, 255, 0.2);
+}
+
+/* ---- Accounts: sign in, Booths & leads ---- */
+.accountBtn {
+  position: absolute;
+  right: 72px;
+  top: 14px;
+  z-index: 3;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(12, 15, 28, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.accountBtn[data-current] {
+  border-color: #c8d8ff;
+}
+
+.authCard {
+  position: absolute;
+  left: 80px;
+  top: 168px;
+  width: 440px;
+  padding: 26px 29px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.authCard .submitBtn {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.authError,
+.authInfo,
+.authSwitch {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.authError {
+  color: #f0a3a3;
+}
+
+.authInfo {
+  color: #c8d8ff;
+}
+
+.authSwitch {
+  color: #aeb4c6;
+}
+
+
+
+
+.boothList {
+  align-self: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+
+
+.boothLink {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #c9cfdd;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.boothRow a.smallPill {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+
+
+
+
+.leadsCard {
+  position: absolute;
+  left: 561px;
+  top: 168px;
+  width: 607px;
+  height: 434px;
+  padding: 20px 22px;
+  background: #1b2036;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.statsRow span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: #aeb4c6;
+}
+
+.statsRow b {
+  font-size: 18px;
+  font-weight: 600;
+  color: #eef1f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leadsHead,
+.leadRow {
+  display: grid;
+  grid-template-columns: 1.3fr 1.3fr 1.2fr 0.9fr 28px;
+  gap: 10px;
+  align-items: center;
+}
+
+.leadsHead {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #aeb4c6;
+}
+
+.leadsList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.leadRow {
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+}
+
+.leadRow small {
+  display: block;
+  font-size: 11px;
+  color: #aeb4c6;
+}
+
+/* Open kiosk: left of Booths & leads when signed in, else left of Restart. */
+
+
+.accountBtn:hover {
+  border-color: #eef1f8;
+}
+
+/* Account menu: the far-right button of the top bar (Restart and Auto / Manual sit to its left) */
+.accountMenu {
+  position: absolute;
+  right: 72px;
+  top: 14px;
+  z-index: 25;
+}
+
+.accountMenu .accountBtn,
+.accountBtn {
+  position: static;
+}
+
+.stage > .accountBtn {
+  position: absolute;
+  right: 72px;
+  top: 14px;
+}
+
+.avatar {
+  width: 20px;
+  height: 20px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: #c8d8ff;
+  color: #1b2036;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: 38px;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: #1f2640;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu button {
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font-size: 14px !important;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  background: rgba(200, 216, 255, 0.12);
+  outline: none;
+}
+
+.menuEmail {
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  color: #aeb4c6;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.menuRule {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Booths & leads: booth list */
+.boothCard {
+  position: absolute;
+  left: 80px;
+  top: 168px;
+  width: 440px;
+  height: 434px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.boothHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.boothHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #aeb4c6;
+}
+
+.boothRow {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.boothText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 15px;
+}
+
+.boothActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.retention {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.retention .boothHint {
+  flex-basis: 100%;
+}
+
+.retentionInput {
+  width: 64px;
+  height: 36px;
+  text-align: center;
+}
+

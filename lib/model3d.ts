@@ -45,19 +45,20 @@ export function buildModel<Id extends string>(o: {
   accent: string;
   explode: number; // 0 assembled → 1 exploded
   highlight: readonly Id[];
+  glow?: readonly Id[]; // parts the visitor points at: lit up in the accent colour (nothing moves)
 }): ModelSlice[] {
   const G = o.geo;
   const k = o.w / G.vbw;
   const N = 22;
   const zm = G.zm;
   const step = (2 * zm) / (N - 1);
-  const e = o.explode;
   const slices: ModelSlice[] = [];
 
   for (let i = 0; i < N; i++) {
     const z = -zm + step * i;
     const paths: ModelPath[] = [];
     for (const p of G.parts) {
+      const e = o.explode;
       const dz = z - ((p.zc ?? 0) + (p.ze ?? 0) * e);
       if (Math.abs(dz) > p.hd) continue;
       const front = dz + step > p.hd;
@@ -67,16 +68,13 @@ export function buildModel<Id extends string>(o: {
       const tf = `translate(${(ox * e).toFixed(1)},${(oy * e).toFixed(1)}) translate(${p.o[0]},${p.o[1]}) scale(${s.toFixed(3)}) translate(${-p.o[0]},${-p.o[1]})`;
       const [light, dark] = TONES[p.tone ?? "pearl"];
       const shade = front ? light : mix(dark, light, 0.25 + 0.6 * ((z + zm) / (2 * zm)));
-      // A lit part takes on the accent colour through its whole depth and glows; when something is lit, the rest dims.
-      const c = on ? mix(shade, o.accent, front ? 0.45 : 0.6) : shade;
-      const op = !on && o.highlight.length ? 0.38 : 1;
+      // The selected part keeps its own colours; when something is selected, everything else goes see-through.
+      const lit = !!o.glow?.includes(p.id);
+      const c = lit ? mix(shade, o.accent, 0.55) : shade;
+      const op = !on && o.highlight.length ? 0.16 : 1;
       let n = 0;
       const push = (x: Omit<ModelPath, "key" | "d" | "tf" | "part"> & { tf?: string }) => paths.push({ d: p.d, tf, ...x, part: p.id, key: `${p.id}-${n++}` });
-      if (on && front) {
-        push({ fill: "none", stroke: o.accent, sw: 26, op: 0.18 });
-        push({ fill: "none", stroke: o.accent, sw: 12, op: 0.5 });
-      }
-      push({ fill: c, stroke: front ? (on ? "#FFFFFF" : mix(light, dark, 0.35)) : c, sw: front ? (on ? 3 : 1.2) : 2.4, op });
+      push({ fill: c, stroke: lit && front ? o.accent : front ? mix(light, dark, 0.35) : c, sw: front ? (lit ? 2 : 1.2) : 2.4, op });
       if (front && p.tp != null) {
         const tp = p.tp;
         push({

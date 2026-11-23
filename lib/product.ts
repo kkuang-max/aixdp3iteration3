@@ -1,12 +1,13 @@
 // Product content shown by the kiosk. Swap this file to demo a different product.
-// Bracketed text ([Brand], [X] h, …) is placeholder copy for the exhibitor to fill in.
+// The built-in example (shown before anything is published) uses made-up dummy values for testing: brand, specs,
+// staff and booth are not real.
 
 import type { ModelGeometry } from "./model3d";
 
 export const PRODUCT = {
   name: "ORBIT EARBUDS",
-  brand: "[BRAND]",
-  booth: "BOOTH [000]",
+  brand: "LUMEN AUDIO",
+  booth: "BOOTH 214",
   kiosk: "KIOSK 1",
 };
 
@@ -57,19 +58,19 @@ export const TOPICS: Topic[] = [
     title: "Six parts, one job each.", explode: 1, highlight: [],
     rows: [
       { a: "Ear tip", b: "Seals the sound in", part: "tip" },
-      { a: "Driver", b: "Makes the sound · [XX] mm", part: "driver" },
-      { a: "Battery", b: "[X] h per charge", part: "battery" },
+      { a: "Driver", b: "Makes the sound · 11 mm", part: "driver" },
+      { a: "Battery", b: "8 h per charge", part: "battery" },
       { a: "Chip board", b: "Runs the noise cancelling", part: "board" },
       { a: "Mic array", b: "Picks out your voice", part: "mic" },
     ],
   },
   {
     id: "different", n: "03", label: "WHAT’S DIFFERENT", short: "What’s different",
-    title: "Why teams choose it over [competitor].", explode: 0.7, highlight: ["board", "mic"],
+    title: "Why people choose it over other earbuds.", explode: 0.7, highlight: ["board", "mic"],
     rows: [
-      { a: "[Differentiator 1]", b: "e.g. noise cancelling that adapts in real time" },
-      { a: "[Differentiator 2]", b: "e.g. [X]-hour battery life" },
-      { a: "[Differentiator 3]", b: "e.g. [X]-year warranty" },
+      { a: "Noise cancelling that adapts", b: "Adjusts to the room in real time" },
+      { a: "28-hour battery life", b: "8 h per charge, 20 more in the case" },
+      { a: "2-year warranty", b: "Free replacement ear tips included" },
     ],
   },
   {
@@ -78,19 +79,19 @@ export const TOPICS: Topic[] = [
     rows: [
       { a: "Commuting", b: "Blocks out train and street noise" },
       { a: "Calls & hybrid work", b: "Clear voice pickup" },
-      { a: "Workouts", b: "Sweat resistant · [IPXX]" },
-      { a: "Travel", b: "[X] h with the case" },
+      { a: "Workouts", b: "Sweat resistant · IPX4" },
+      { a: "Travel", b: "28 h with the case" },
     ],
   },
   {
     id: "specs", n: "05", label: "SPECS", short: "Specs",
-    title: "Specs & compatibility.", explode: 0.4, highlight: ["battery"],
+    title: "Specs & compatibility.", explode: 1, highlight: ["battery"],
     rows: [
-      { a: "Battery", b: "[X] h · [X] h with case", part: "battery" },
-      { a: "Bluetooth", b: "[5.x] · multipoint", part: "board" },
-      { a: "Water resistance", b: "[IPXX]", part: "shell" },
-      { a: "Works with", b: "iOS · Android · Windows [confirm]", part: "board" },
-      { a: "Weight", b: "[X] g per bud", part: "shell" },
+      { a: "Battery", b: "8 h · 28 h with case", part: "battery" },
+      { a: "Bluetooth", b: "5.3 · multipoint", part: "board" },
+      { a: "Water resistance", b: "IPX4", part: "shell" },
+      { a: "Works with", b: "iOS · Android · Windows", part: "board" },
+      { a: "Weight", b: "5 g per bud", part: "shell" },
     ],
   },
 ];
@@ -100,7 +101,7 @@ export const PART_TOPICS = new Set(["how", "specs"]);
 
 // Staff shown when a visitor asks for a team member (placeholders for the exhibitor to fill in).
 export const STAFF = [
-  { initials: "[AB]", name: "[Staff name]" },
-  { initials: "[CD]", name: "[Teammate name]" },
+  { initials: "JL", name: "Jordan Lee" },
+  { initials: "SP", name: "Sam Patel" },
 ];
-export const STAFF_ETA = "[X] MIN";
+export const STAFF_ETA = "5 MIN";
