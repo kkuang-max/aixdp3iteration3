@@ -1668,9 +1668,9 @@
 .restartBtn {
   position: absolute;
   right: 397px;
-  top: 14px;
+  top: 12px; /* same height and line as the Auto/Manual switch and Account */
   z-index: 3;
-  height: 30px;
+  height: 36px;
   padding: 0 14px;
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 999px;
@@ -2024,9 +2024,9 @@
 .accountBtn {
   position: absolute;
   right: 72px;
-  top: 14px;
+  top: 12px;
   z-index: 3;
-  height: 30px;
+  height: 36px;
   padding: 0 14px;
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 999px;
@@ -2200,7 +2200,7 @@
 .accountMenu {
   position: absolute;
   right: 72px;
-  top: 14px;
+  top: 12px;
   z-index: 25;
 }
 
@@ -2212,7 +2212,7 @@
 .stage > .accountBtn {
   position: absolute;
   right: 72px;
-  top: 14px;
+  top: 12px;
 }
 
 .avatar {
