@@ -2,7 +2,7 @@
 // (Gesture → Does → What it says) and published with the demo.
 //
 //   Whole product: Hover (hold) → pauses the spin, shows `whole`.
-//   A part:        Hover (hold) → pulls the part out, shows `hover` (a short label).
+//   A part:        Hover (hold) → lights the part up, shows `hover` (a short label).
 //                  Pinch        → zooms in, shows `pinch` (one or two sentences) and `specs` (optional).
 //                  Open palm    → resets the demo (always on, nothing to write).
 

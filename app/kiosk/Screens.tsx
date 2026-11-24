@@ -135,7 +135,7 @@ export function Hub(props: {
   onPick: (i: number) => void;
   activeRow: number | null;
   modelPart: string | null; // the part of the model under the pointer
-  /** Holding over the model (stops it turning, pulls the part out) and pinch zoom (0..1) on a part. */
+  /** Holding over the model (stops it turning, lights the part up) and pinch zoom on a part. */
   hold: HoldState;
   onRow: (i: number) => void;
   explode: number;
