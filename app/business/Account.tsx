@@ -79,11 +79,30 @@ export function SignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [pending, setPending] = useState(""); // an account waiting for its confirmation email
+  const [resent, setResent] = useState(false);
+  const redirect = () => `${window.location.origin}/business`;
+
+  const resend = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      const { error } = await supabase().auth.resend({ type: "signup", email: pending, options: { emailRedirectTo: redirect() } });
+      if (error) setError(/rate|seconds/i.test(error.message) ? "A link was just sent. Wait a minute, then try again." : error.message);
+      else { setResent(true); setInfo(`Sent a new link to ${pending}. It can take a minute; check spam too.`); }
+    } catch {
+      setError("Couldn't reach the server. Check the connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setInfo("");
+    setPending("");
+    setResent(false);
     if (!email.trim() || password.length < 6) {
       setError(password.length < 6 ? "Use a password of at least 6 characters." : "Enter your email.");
       return;
@@ -93,15 +112,22 @@ export function SignIn() {
     try {
       if (mode === "in") {
         const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) setError(error.message === "Invalid login credentials" ? "That email and password don't match an account." : error.message);
+        if (error && /not confirmed/i.test(error.message)) {
+          setPending(email.trim());
+          setError(`This account isn't confirmed yet. Open the link we emailed to ${email.trim()}, or send a new one.`);
+        } else if (error) setError(error.message === "Invalid login credentials" ? "That email and password don't match an account." : error.message);
       } else {
         const { data, error } = await sb.auth.signUp({
           email: email.trim(),
           password,
-          options: { data: { business_name: name.trim() }, emailRedirectTo: `${window.location.origin}/business` },
+          options: { data: { business_name: name.trim() }, emailRedirectTo: redirect() },
         });
         if (error) setError(error.message);
-        else if (!data.session) setInfo(`Check ${email.trim()} for a link to confirm your account, then sign in.`);
+        else if (!data.session) {
+          // Opening the link signs them in here; no one has to approve the account.
+          setPending(email.trim());
+          setInfo(`Almost there: open the link we emailed to ${email.trim()} to finish signing up. Check spam if it isn't there in a minute.`);
+        }
       }
     } catch {
       setError("Couldn't reach the server. Check the connection and try again.");
@@ -129,6 +155,9 @@ export function SignIn() {
         <input id="auth-password" type="password" className={styles.field} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete={mode === "in" ? "current-password" : "new-password"} />
         {error && <p className={styles.authError} role="alert">{error}</p>}
         {info && <p className={styles.authInfo} role="status">{info}</p>}
+        {pending && !resent && (
+          <button type="button" className={styles.textLink} onClick={resend} disabled={busy}>Didn&apos;t get it? Send the link again</button>
+        )}
         <button type="submit" className={styles.submitBtn} disabled={busy}>{busy ? "ONE MOMENT…" : mode === "in" ? "SIGN IN" : "CREATE ACCOUNT"}</button>
         <p className={styles.authSwitch}>
           {mode === "in" ? "New to Playform?" : "Already have an account?"}{" "}
