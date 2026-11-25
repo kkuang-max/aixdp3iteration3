@@ -11,17 +11,35 @@ import { supabase, supabaseEnabled } from "@/lib/supabase";
 import styles from "./business.module.css";
 
 // ---- The signed-in business ---------------------------------------------------------------------------------------
+/** Every account needs its business and demo rows (made at sign-up). If they're missing, e.g. the tables were
+ *  cleared in Supabase, make them again so saving and publishing keep working. Only ever adds; never overwrites. */
+const ensured = new Set<string>();
+async function ensureRows(u: User) {
+  if (ensured.has(u.id)) return;
+  ensured.add(u.id);
+  const sb = supabase();
+  const name = typeof u.user_metadata?.business_name === "string" ? u.user_metadata.business_name : "";
+  await sb.from("businesses").upsert({ id: u.id, name }, { onConflict: "id", ignoreDuplicates: true });
+  await sb.from("demos").upsert({ business_id: u.id }, { onConflict: "business_id", ignoreDuplicates: true });
+}
+
 export function useAccount(): { user: User | null; ready: boolean } {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(!supabaseEnabled);
   useEffect(() => {
     if (!supabaseEnabled) return;
     const sb = supabase();
-    sb.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
+    sb.auth.getSession().then(async ({ data }) => {
+      const u = data.session?.user ?? null;
+      if (u) await ensureRows(u).catch(() => {});
+      setUser(u);
       setReady(true);
     });
-    const { data } = sb.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null));
+    const { data } = sb.auth.onAuthStateChange((_e, session) => {
+      const u = session?.user ?? null;
+      if (u) void ensureRows(u).catch(() => {});
+      setUser(u);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
   return { user, ready };
@@ -128,7 +146,11 @@ export function SignIn() {
           options: { data: { business_name: name.trim() }, emailRedirectTo: redirect() },
         });
         if (error) setError(error.message);
-        else if (!data.session) {
+        else if (data.user && !data.session && (data.user.identities?.length ?? 0) === 0) {
+          // Supabase's sign of an email that already has an account: it sends nothing, so say so.
+          setMode("in");
+          setError(`${email.trim()} already has an account. Sign in with its password instead.`);
+        } else if (!data.session) {
           // Opening the link signs them in here; no one has to approve the account.
           setPending(email.trim());
           setInfo(`Almost there: open the link we emailed to ${email.trim()} to finish signing up. Check spam if it isn't there in a minute.`);
