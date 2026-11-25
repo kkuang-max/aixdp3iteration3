@@ -81,7 +81,12 @@ export function SignIn() {
   const [info, setInfo] = useState("");
   const [pending, setPending] = useState(""); // an account waiting for its confirmation email
   const [resent, setResent] = useState(false);
-  const redirect = () => `${window.location.origin}/business`;
+  // Confirmation links always open the production site: preview deployments are behind Vercel's login. (Vercel sets
+  // NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL at build time; locally it's unset and the current address is used.)
+  const redirect = () => {
+    const prod = process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
+    return `${prod ? `https://${prod}` : window.location.origin}/business`;
+  };
 
   const resend = async () => {
     setError("");
