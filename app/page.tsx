@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Kiosk from "./kiosk/Kiosk";
+import AuthBounce from "./AuthBounce";
 
 export const metadata: Metadata = {
   title: "Playform — Interactive Booth Kiosk",
@@ -7,5 +8,10 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <Kiosk />;
+  return (
+    <>
+      <AuthBounce />
+      <Kiosk />
+    </>
+  );
 }
