@@ -1085,7 +1085,7 @@ export default function BusinessPage() {
           { icon: "reset", gesture: "Open palm", does: "Resets demo", fixed: "Always on" },
         ]
       : [
-          { icon: "right", gesture: "Hover", does: "Pulls part out", key: "hover", placeholder: "Short label", label: `Label shown when ${slide?.label} is pulled out` },
+          { icon: "right", gesture: "Hover", does: "Lights it up", key: "hover", placeholder: "Short label", label: `Label shown when ${slide?.label} lights up` },
           { icon: "right", gesture: "Pinch", does: "Zooms in", key: "pinch", placeholder: "One or two sentences", label: `Text shown when zoomed in on ${slide?.label}` },
           { icon: "right", gesture: "Pinch", does: "Shows specs", key: "specs", placeholder: "Optional", label: `Specs shown when zoomed in on ${slide?.label}` },
           { icon: "reset", gesture: "Open palm", does: "Resets demo", fixed: "Always on" },
@@ -1382,7 +1382,7 @@ function PartViewer({ slides, index, onIndex, inContext, onToggleContext, gestur
               <GestureIcon gesture={g} />{g}
               <button type="button" className={styles.usedChipRemove} aria-label={`Remove ${g} from ${slide.label}`} onClick={() => onRemoveGesture(slide.label, g)}>×</button>
             </span>
-          )) : <span className={styles.mutedSmall}>{index === 0 ? "Hover pauses the spin" : "Pulls out on hover · zooms in on pinch"}</span>}
+          )) : <span className={styles.mutedSmall}>{index === 0 ? "Hover pauses the spin" : "Lights up on hover · zooms in on pinch"}</span>}
         </span>
       </div>
       <div className={styles.stepRail}>
