@@ -5,13 +5,14 @@
 //
 // It is only the picture. No camera, hand tracking, idle timers or window-wide keyboard / mouse listeners (those live
 // in Kiosk.tsx), so typing in the portal never reaches it, and nothing is recorded or sent. Topics and rows respond to
-// clicks so the business can look around, the same way a visitor's touch would.
+// clicks so the business can look around, the same way a visitor's touch would. With `edit`, the topic's text can be
+// typed into where it appears.
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { PART_TOPICS, TOPICS } from "@/lib/product";
 import type { PublishedDemo } from "@/lib/published";
 import type { HoldState } from "./Kiosk";
-import { DemoContext, Hub, ModelFileContext } from "./Screens";
+import { DemoContext, Hub, ModelFileContext, type HubEdit } from "./Screens";
 import styles from "./kiosk.module.css";
 
 const STAGE_W = 1280;
@@ -29,7 +30,7 @@ export type KioskAction = "team" | "brochure" | "contact";
 /** Where a topic button sits on the 1280×720 stage (stage px). */
 type Spot = { id: string; x: number; y: number };
 
-export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onAction, badges, width, className }: {
+export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onAction, badges, edit, width, className }: {
   demo: PublishedDemo;
   /** The model file for the live 3D view (pictures show without it). */
   modelFile: { name: string; data: ArrayBuffer } | null;
@@ -42,6 +43,8 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
   /** Editor only: a mark drawn at the end of each topic button (by topic id), e.g. what that topic still needs. It is
    *  laid over the kiosk, not part of it, so the visitor kiosk never shows it. */
   badges?: Record<string, ReactNode>;
+  /** Editor only: make the shown topic's headline and points editable where they appear. */
+  edit?: HubEdit;
   /** Width on the page (px); the 1280×720 kiosk is scaled to it. */
   width: number;
   className?: string;
@@ -101,6 +104,7 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
               onTeam={() => onAction?.("team")}
               onBrochure={() => onAction?.("brochure")}
               onContact={() => onAction?.("contact")}
+              edit={edit}
             />
           </ModelFileContext.Provider>
         </DemoContext.Provider>

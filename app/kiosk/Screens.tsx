@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
 import { SAMPLE_GESTURE_TEXT, SAMPLE_PART_NAMES, type GestureText } from "@/lib/gestureText";
 import type { HoldState } from "./Kiosk";
@@ -125,6 +125,43 @@ function HandButton(props: { className: string; onClick: () => void; children: R
   );
 }
 
+// ---- Editing in place (business portal preview only) --------------------------------------
+/** Given only by the business portal's live preview: the topic's text becomes editable where visitors read it. The
+ *  visitor kiosk never passes it. */
+export type HubEdit = {
+  onTitle: (v: string) => void;
+  onRow: (i: number, patch: { a?: string; b?: string }) => void;
+  onAddRow: () => void;
+  onRemoveRow: (i: number) => void;
+  maxRows: number;
+};
+
+/** A text box styled like the kiosk text it replaces, growing with its text. Kiosk copy is one line of text per
+ *  field: Enter doesn't add a line. */
+function EditText({ value, onChange, className, placeholder, label, onFocus }: { value: string; onChange: (v: string) => void; className: string; placeholder: string; label: string; onFocus?: () => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      className={`${className} ${styles.editText}`}
+      value={value}
+      placeholder={placeholder}
+      aria-label={label}
+      spellCheck
+      onFocus={onFocus}
+      onChange={(e) => onChange(e.target.value.replace(/\s*\n\s*/g, " "))}
+      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+    />
+  );
+}
+
 // ---- Topic hub ---------------------------------------------------------------
 // One stable array per part, so the 3D earbud only rebuilds when the lit part changes.
 const NO_PARTS: PartId[] = [];
@@ -145,10 +182,13 @@ export function Hub(props: {
   onTeam: () => void;
   onBrochure: () => void;
   onContact: () => void;
+  /** Business portal preview only: edit the topic's text in place. */
+  edit?: HubEdit;
 }) {
   const demo = useContext(DemoContext);
   const productName = useProductName();
   const base = TOPICS[props.topic];
+  const edit = props.edit;
   const published = demo?.sections.find((x) => x.id === base.id);
   // A demo from the portal shows exactly what was filled in, even if that's nothing; the built-in sample shows only
   // when nothing has been published.
@@ -249,9 +289,18 @@ export function Hub(props: {
         <span className={styles.panelKicker}>
           {t.n} · {t.label}
         </span>
-        {t.title ? <h1 className={styles.panelTitle}>{t.title}</h1> : <h1 className={styles.panelTitle} data-empty="">Not filled in yet</h1>}
+        {edit ? (
+          <EditText className={styles.panelTitle} value={t.title} placeholder="Write a headline" label="Headline" onChange={edit.onTitle} />
+        ) : t.title ? <h1 className={styles.panelTitle}>{t.title}</h1> : <h1 className={styles.panelTitle} data-empty="">Not filled in yet</h1>}
         <div className={styles.rows}>
-          {t.rows.map((r, i) => (
+          {t.rows.map((r, i) => edit ? (
+            // Keyed by position, so a row keeps its text box (and the cursor) while it is typed in.
+            <div key={i} className={`${styles.row} ${styles.editRow}`} data-active={rowLit(r, i) ? "" : undefined}>
+              <EditText className={styles.rowA} value={r.a} placeholder="Point" label={`Point ${i + 1}`} onChange={(v) => edit.onRow(i, { a: v })} onFocus={interactive ? () => props.onRow(i) : undefined} />
+              <EditText className={styles.rowB} value={r.b} placeholder="Detail (optional)" label={`Point ${i + 1} detail`} onChange={(v) => edit.onRow(i, { b: v })} onFocus={interactive ? () => props.onRow(i) : undefined} />
+              <button type="button" className={styles.editRemove} aria-label={`Remove point ${i + 1}`} title="Remove this point" onClick={() => edit.onRemoveRow(i)}>×</button>
+            </div>
+          ) : (
             <div
               key={`${i}-${r.a}`}
               className={styles.row}
@@ -263,6 +312,9 @@ export function Hub(props: {
               {r.b && <span className={styles.rowB}>{r.b}</span>}
             </div>
           ))}
+          {edit && t.rows.length < edit.maxRows && (
+            <button type="button" className={styles.editAdd} onClick={edit.onAddRow}>+ Add point</button>
+          )}
         </div>
       </section>
       )}
