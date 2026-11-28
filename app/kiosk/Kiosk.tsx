@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PART_TOPICS, TOPICS } from "@/lib/product";
+import { PART_TOPICS, STORY, TOPICS, topicIndex, viewOf } from "@/lib/product";
 import { newSession, saveLead, saveVisit, type LeadKind, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
@@ -24,7 +24,8 @@ const DEFAULT_TOPIC = 0; // "What it is": every visitor starts here (and the kio
 
 // Timing.
 const PRESENT_MS = 8000; // no hand and no touch/mouse for this long → nobody is at the kiosk
-const ATTRACT_CYCLE_MS = 5000; // nobody here: flip through the topics like a pamphlet on a stand
+const ATTRACT_CYCLE_MS = 5000; // nobody here: flip through the pages like a pamphlet on a stand
+const PAGE_TURN_MS = 9000; // someone here on Overview: its cards turn on their own, until they turn one themselves
 const RESET_MS = 45000; // nobody here this long → clear the visitor's session, back to the start
 const RESET_STAFF_MS = 180000; // they were told to look around while staff come over, so wait longer
 const ZOOM_ABANDON_MS = 180000; // zoomed in and nobody seen this long: they walked away mid-zoom, start over
@@ -192,7 +193,7 @@ export default function Kiosk() {
   const [screen, setScreen] = useState<Screen>("hub");
   const [topic, setTopic] = useState(DEFAULT_TOPIC);
   const [present, setPresent] = useState(false); // someone is using the kiosk (else attract loop)
-  // On "How it works" and "Specs": the row a visitor is pointing at or swiped to (its part lights up).
+  // On Explore the parts (Parts and Specs): the row a visitor is pointing at or swiped to (its part lights up).
   const [activeRow, setActiveRow] = useState<number | null>(null);
   const [modelPart, setModelPart] = useState<string | null>(null); // the part of the model under the pointer
   // Holding over the model stops it turning (and on How it works / Specs pulls the pointed part out); pinching zooms in.
@@ -297,6 +298,8 @@ export default function Kiosk() {
     present: false,
     lastActive: 0, // last time a hand, touch or mouse was seen
     lastCycle: 0,
+    pageAt: 0, // when the page last changed (Overview's cards turn on their own after a while)
+    pagePicked: false, // the visitor turned a page themselves in this view: stop turning them on their own
     hasPos: false,
     x: 0,
     y: 0,
@@ -340,6 +343,7 @@ export default function Kiosk() {
     s.lastActive = now;
     if (!s.present) {
       s.present = true;
+      s.pageAt = now; // a visitor gets a full read of the card in front of them before it turns
       setPresent(true);
       if (!session.current.start) session.current.start = Date.now();
     }
@@ -353,6 +357,9 @@ export default function Kiosk() {
         // A new topic starts with no row picked (re-picking the same topic keeps it).
         setActiveRow(null);
         ix.current.activeRow = null;
+        ix.current.pageAt = performance.now();
+        // Turning a page within the same view on purpose stops the automatic page turns; opening a view restarts them.
+        if (byVisitor) ix.current.pagePicked = viewOf(TOPICS[i].id).id === viewOf(TOPICS[ix.current.topic].id).id;
       }
       ix.current.topic = i;
       setTopic(i);
@@ -382,7 +389,7 @@ export default function Kiosk() {
     // The visitor is done: a booth's kiosk records what they did (not in a Try it preview).
     if (!demoRef.current?.preview) saveVisit(session.current, demoRef.current?.booth ?? kioskBooth());
     session.current = newSession();
-    Object.assign(ix.current, { zoomed: false, zoomPart: null, holding: false, zoneSince: 0 });
+    Object.assign(ix.current, { zoomed: false, zoomPart: null, holding: false, zoneSince: 0, pagePicked: false });
     setHold(NO_HOLD);
     ix.current.screen = "hub";
     setScreen("hub");
@@ -417,6 +424,14 @@ export default function Kiosk() {
       // or screens: visitors pick those by holding a hand over them.
       const s = ix.current;
       const tp = TOPICS[s.topic];
+      // Left / right turn the pages of the view (Overview's cards; Parts and Specs).
+      if (s.screen === "hub" && !s.zoomed && (dir === "left" || dir === "right")) {
+        const pages = viewOf(tp.id).pages;
+        const at = pages.indexOf(tp.id);
+        const to = pages[(at + (dir === "left" ? 1 : -1) + pages.length) % pages.length];
+        if (to !== tp.id) pickTopic(topicIndex(to));
+        return;
+      }
       if (s.screen !== "hub" || !PART_TOPICS.has(tp.id) || (dir !== "up" && dir !== "down")) return;
       const rows = demoRef.current ? (demoRef.current.sections.find((x) => x.id === tp.id)?.rows.length ?? 0) : tp.rows.length;
       const next = dir === "down" ? (s.activeRow === null ? 0 : s.activeRow + 1) : s.activeRow === null ? rows - 1 : s.activeRow - 1;
@@ -425,7 +440,7 @@ export default function Kiosk() {
       s.rowFromHover = false;
       setActiveRow(row);
     },
-    [markPresent],
+    [markPresent, pickTopic],
   );
 
   // ---- Hold and pinch on the model --------------------------------------------
@@ -901,6 +916,12 @@ export default function Kiosk() {
         if (s.screen === "hub") {
           const id = TOPICS[s.topic].id;
           session.current.time[id] = (session.current.time[id] ?? 0) + dt;
+          // Overview's cards turn on their own while someone reads, until they turn one themselves.
+          const view = viewOf(id);
+          if (view.id === "overview" && !s.pagePicked && now - s.pageAt > PAGE_TURN_MS) {
+            s.pageAt = now;
+            pickTopic(topicIndex(view.pages[(view.pages.indexOf(id) + 1) % view.pages.length]), false);
+          }
         }
         if (idle > PRESENT_MS) {
           s.present = false;
@@ -908,9 +929,9 @@ export default function Kiosk() {
           setPresent(false);
         }
       } else if (s.screen === "hub" && session.current.start === 0 && now - s.lastCycle > ATTRACT_CYCLE_MS) {
-        // Nobody here (and no unfinished visit): flip to the next topic to draw people in.
+        // Nobody here (and no unfinished visit): flip to the next page of the story to draw people in.
         s.lastCycle = now;
-        pickTopic(s.topic + 1, false);
+        pickTopic(topicIndex(STORY[(STORY.indexOf(TOPICS[s.topic].id) + 1) % STORY.length]), false);
       }
       if (session.current.start && !s.present && !(s.zoomed && idle < ZOOM_ABANDON_MS) && idle > (s.screen === "staff" ? RESET_STAFF_MS : RESET_MS)) {
         s.lastCycle = now;
@@ -945,7 +966,7 @@ export default function Kiosk() {
     : !camOk
       ? { title: "TOUCH OR HOVER OVER A TOPIC", sub: "Pick in any order" }
       : swipeMode
-        ? { title: "HOLD YOUR HAND OVER A TOPIC", sub: "On How it works and Specs, swipe up or down through the parts" }
+        ? { title: "HOLD YOUR HAND OVER A TOPIC", sub: "Swipe left or right to turn pages · up or down through the parts" }
         : { title: "HOLD YOUR HAND OVER A TOPIC", sub: "It opens after a second · pick in any order" };
 
   // On How it works / Specs, tell visitors the rows respond.

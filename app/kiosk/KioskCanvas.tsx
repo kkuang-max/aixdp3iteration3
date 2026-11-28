@@ -40,8 +40,8 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
   onPickTopic?: (id: string) => void;
   /** Talk to our team, Get digital brochure or Give us your contact was clicked. */
   onAction?: (action: KioskAction) => void;
-  /** Editor only: a mark drawn at the end of each topic button (by topic id), e.g. what that topic still needs. It is
-   *  laid over the kiosk, not part of it, so the visitor kiosk never shows it. */
+  /** Editor only: marks laid over the kiosk, keyed by view id (overview, explore: drawn on the two choices) or topic id
+   *  (drawn on its page tab), e.g. what it still needs. Not part of the kiosk, so the visitor kiosk never shows them. */
   badges?: Record<string, ReactNode>;
   /** Editor only: make the shown topic's headline and points editable where they appear. */
   edit?: HubEdit;
@@ -65,16 +65,19 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
     const stage = stageRef.current;
     if (!stage || !hasBadges) return;
     const measure = () => {
-      const buttons = stage.querySelectorAll<HTMLElement>('nav[aria-label="Topics"] button');
+      // The two choices (data-view) get a mark at their right end; page tabs (data-page) at their top-right corner.
+      const els = stage.querySelectorAll<HTMLElement>("[data-view], [data-page]");
       const next: Spot[] = [];
-      buttons.forEach((b, i) => {
+      els.forEach((b) => {
         let x = 0;
         let y = 0;
         for (let n: HTMLElement | null = b; n && n !== stage; n = n.offsetParent as HTMLElement | null) {
           x += n.offsetLeft;
           y += n.offsetTop;
         }
-        if (TOPICS[i]) next.push({ id: TOPICS[i].id, x: x + b.offsetWidth - 30, y: y + b.offsetHeight / 2 });
+        const view = b.dataset.view;
+        if (view) next.push({ id: view, x: x + b.offsetWidth - 30, y: y + b.offsetHeight / 2 });
+        else next.push({ id: b.dataset.page ?? "", x: x + b.offsetWidth - 4, y: y + 4 });
       });
       setSpots((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     };
@@ -82,7 +85,7 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
     const ro = new ResizeObserver(measure);
     ro.observe(stage);
     return () => ro.disconnect();
-  }, [hasBadges]);
+  }, [hasBadges, id]);
 
   return (
     <div className={`${styles.canvas} ${className ?? ""}`} style={{ width, height: STAGE_H * scale }}>

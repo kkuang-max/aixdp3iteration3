@@ -99,6 +99,27 @@ export const TOPICS: Topic[] = [
 /** Topics whose rows are interactive: hover a row, or swipe up / down through them, to light up that part. */
 export const PART_TOPICS = new Set(["how", "specs"]);
 
+// The kiosk offers visitors two choices. Each shows some of the topics above as pages that turn like cards (a hand
+// held over a page's name, a tap, or a swipe left / right). The topics themselves (and their ids, which visits and
+// leads record) don't change: this is only how they are grouped.
+export type View = { id: string; n: string; label: string; pages: string[] };
+export const VIEWS: View[] = [
+  { id: "overview", n: "01", label: "OVERVIEW", pages: ["what", "different", "uses"] },
+  { id: "explore", n: "02", label: "EXPLORE THE PARTS", pages: ["how", "specs"] },
+];
+/** Each page's name inside its view. */
+export const PAGE_LABEL: Record<string, string> = {
+  what: "What it is",
+  different: "Why it’s different",
+  uses: "Where it’s used",
+  how: "Parts",
+  specs: "Specs",
+};
+/** Nobody at the kiosk: the pages it flips through, as a story (what, why, where), then a look inside. */
+export const STORY = ["what", "different", "uses", "how", "specs"];
+export const viewOf = (topicId: string): View => VIEWS.find((v) => v.pages.includes(topicId)) ?? VIEWS[0];
+export const topicIndex = (id: string) => Math.max(0, TOPICS.findIndex((t) => t.id === id));
+
 // Staff shown when a visitor asks for a team member (placeholders for the exhibitor to fill in).
 export const STAFF = [
   { initials: "JL", name: "Jordan Lee" },

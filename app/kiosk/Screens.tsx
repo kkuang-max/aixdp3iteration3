@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { MODEL, PART_TOPICS, PRODUCT, TOPICS, type PartId } from "@/lib/product";
+import { MODEL, PAGE_LABEL, PART_TOPICS, PRODUCT, STORY, TOPICS, VIEWS, topicIndex, viewOf, type PartId } from "@/lib/product";
 import { SAMPLE_GESTURE_TEXT, SAMPLE_PART_NAMES, type GestureText } from "@/lib/gestureText";
 import type { HoldState } from "./Kiosk";
 import { TypingPanel } from "./Keyboard";
@@ -188,6 +188,7 @@ export function Hub(props: {
   const demo = useContext(DemoContext);
   const productName = useProductName();
   const base = TOPICS[props.topic];
+  const view = viewOf(base.id); // Overview or Explore the parts
   const edit = props.edit;
   const published = demo?.sections.find((x) => x.id === base.id);
   // A demo from the portal shows exactly what was filled in, even if that's nothing; the built-in sample shows only
@@ -227,27 +228,28 @@ export function Hub(props: {
 
       <nav className={styles.topics} aria-label="Topics">
         <span className={styles.topicsLabel}>WHAT DO YOU WANT TO KNOW?</span>
-        {TOPICS.map((tp, i) => {
-          const on = i === props.topic;
+        {VIEWS.map((v) => {
+          const on = v.id === view.id;
           return (
             <button
-              key={tp.id}
+              key={v.id}
               type="button"
               className={styles.topic}
+              data-view={v.id}
               data-dwell={DWELL_TOPIC_MS}
               data-dwell-mouse=""
               data-current={on ? "" : undefined}
               aria-current={on ? "true" : undefined}
-              onClick={() => props.onPick(i)}
+              onClick={() => { if (!on) props.onPick(topicIndex(v.pages[0])); }}
             >
               <span className={styles.topicNum}>
                 <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
                   <circle cx="20" cy="20" r="18" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="1.5" />
                   <circle cx="20" cy="20" r="18" fill="none" stroke={props.accent} strokeWidth="2.5" strokeLinecap="round" strokeDasharray="113" className={styles.dwellRing} />
                 </svg>
-                {tp.n}
+                {v.n}
               </span>
-              <span className={styles.topicLabel}>{tp.label}</span>
+              <span className={styles.topicLabel}>{v.label}</span>
             </button>
           );
         })}
@@ -270,7 +272,7 @@ export function Hub(props: {
       {zoomPart ? (
       <section key={`zoom-${zoomPart}`} className={styles.panel} aria-live="polite">
         <span className={styles.panelKicker}>
-          {t.n} · {t.label}
+          {view.label} · {PAGE_LABEL[t.id] ?? t.label}
         </span>
         <h1 className={styles.panelTitle}>{zoomName}</h1>
         <div className={styles.partDetail}>
@@ -285,10 +287,30 @@ export function Hub(props: {
         </div>
       </section>
       ) : (
-      <section key={t.id} className={styles.panel} aria-live="polite">
-        <span className={styles.panelKicker}>
-          {t.n} · {t.label}
-        </span>
+      <section key={view.id} className={styles.panel} aria-live="polite">
+        {/* The view's pages, turning like cards: hold a hand over one, tap it, or swipe left / right. */}
+        <div className={styles.pages} role="tablist" aria-label={view.label}>
+          {view.pages.map((id) => {
+            const on = id === base.id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                className={styles.page}
+                data-page={id}
+                data-dwell={DWELL_TOPIC_MS}
+                data-current={on ? "" : undefined}
+                onClick={() => { if (!on) props.onPick(topicIndex(id)); }}
+              >
+                {PAGE_LABEL[id] ?? id}
+                <span className={styles.dwellBar} aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+        <div key={t.id} className={styles.pageBody}>
         {edit ? (
           <EditText className={styles.panelTitle} value={t.title} placeholder="Write a headline" label="Headline" onChange={edit.onTitle} />
         ) : t.title ? <h1 className={styles.panelTitle}>{t.title}</h1> : <h1 className={styles.panelTitle} data-empty="">Not filled in yet</h1>}
@@ -316,6 +338,7 @@ export function Hub(props: {
             <button type="button" className={styles.editAdd} onClick={edit.onAddRow}>+ Add point</button>
           )}
         </div>
+        </div>
       </section>
       )}
 
@@ -328,8 +351,8 @@ export function Hub(props: {
         </span>
         {props.attract && (
           <span className={styles.attractDots} aria-hidden="true">
-            {TOPICS.map((tp, i) => (
-              <span key={tp.id} data-on={i === props.topic ? "" : undefined} />
+            {STORY.map((id) => (
+              <span key={id} data-on={id === base.id ? "" : undefined} />
             ))}
           </span>
         )}

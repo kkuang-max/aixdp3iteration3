@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { TOPICS } from "@/lib/product";
+import { PAGE_LABEL, TOPICS, VIEWS } from "@/lib/product";
 import { buildModelParts, MODEL_ACCEPT, MODEL_EXT, STEP_EXT, type LoadedModel } from "@/lib/modelParts";
 import { deleteFile, loadFile, saveFile } from "@/lib/fileStore";
 import { EMPTY_PART_TEXT, type PartText } from "@/lib/gestureText";
@@ -306,7 +306,7 @@ function statusNote(s: Section): string {
   if (s.needsReview) return "The AI flagged this topic: check it against your product doc.";
   if (filled.length < s.rows.length) return "A point is empty: fill it in or remove it.";
   if (PLACEHOLDER.test([s.title, ...s.rows.flatMap((r) => [r.a, r.b])].join(" "))) return "Replace the [brackets] with your product’s details.";
-  return "Ready. Click any text on the kiosk to change it, or a topic to switch.";
+  return "Ready. Click any text on the kiosk to change it, or a page tab to switch.";
 }
 
 /** Each status has its own shape as well as its colour (✓ / ! / empty ring), so it never relies on colour alone. */
@@ -743,11 +743,19 @@ export default function BusinessPage() {
   };
   const ACTION_SCREENS: Record<KioskAction, string> = { team: "Talk to our team", brochure: "Get digital brochure", contact: "Give us your contact" };
   const onPreviewAction = (a: KioskAction) => setNotice(`On the kiosk this opens ${ACTION_SCREENS[a]}. Press Try it to go through it.`);
-  // Each topic's status, drawn on the preview's own topic list (editor only), so the topics aren't listed twice.
-  const topicBadges = Object.fromEntries(config.sections.map((x) => {
+  // Status drawn on the preview itself (editor only), so nothing is listed twice: each page tab gets its topic's, and
+  // each of the two choices (Overview, Explore the parts) the worst of its pages'.
+  const RANK: Record<Status, number> = { good: 0, attention: 1, insufficient: 2 };
+  const statusOf = (id: string): Status => { const x = config.sections.find((y) => y.id === id); return x ? sectionStatus(x) : "insufficient"; };
+  const topicBadges: Record<string, ReactNode> = {};
+  for (const x of config.sections) {
     const st = sectionStatus(x);
-    return [x.id, <StatusIcon key={x.id} status={st} label={`${x.label}: ${STATUS_TEXT[st]}`} />];
-  }));
+    topicBadges[x.id] = <StatusIcon status={st} label={`${PAGE_LABEL[x.id] ?? x.label}: ${STATUS_TEXT[st]}`} />;
+  }
+  for (const v of VIEWS) {
+    const st = v.pages.map(statusOf).reduce<Status>((a, b) => (RANK[b] > RANK[a] ? b : a), "good");
+    topicBadges[v.id] = <StatusIcon status={st} label={`${v.label}: ${STATUS_TEXT[st]}`} />;
+  }
   const livePreview = (topicId: string, width: number, onPick: (id: string) => void, edit?: HubEdit) => (
     <KioskCanvas demo={liveDemo} modelFile={liveFile} topicId={topicId} width={width} onPickTopic={onPick} onAction={onPreviewAction} badges={topicBadges} edit={edit} />
   );
@@ -1147,7 +1155,7 @@ export default function BusinessPage() {
               </div>
             ))}
           </div>
-          <p className={styles.gestureNote}>On What it is, What’s different and Where it’s used, hover just pauses the spin</p>
+          <p className={styles.gestureNote}>On Overview, hover just pauses the spin. On Explore the parts, it lights parts up and pinch zooms in</p>
         </div>
         <Foot back={{ label: "BACK", onClick: backFromGestures }} next={<>
           <button type="button" className={styles.outlineBtnDim} onClick={tryIt} title="Open the kiosk with what is filled in so far (not published)">TRY IT</button>
