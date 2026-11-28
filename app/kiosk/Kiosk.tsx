@@ -402,7 +402,8 @@ export default function Kiosk() {
     (method: LeadMethod, kind: LeadKind) => {
       if (kind === "brochure") session.current.sent = method;
       else session.current.contacted = true;
-      saveLead(session.current, method, kind, demoRef.current?.preview ? null : (demoRef.current?.booth ?? kioskBooth()));
+      // A Try it preview is the business testing its draft: show the confirmation, but keep no lead.
+      if (!demoRef.current?.preview) saveLead(session.current, method, kind, demoRef.current?.booth ?? kioskBooth());
       bump();
     },
     [bump],

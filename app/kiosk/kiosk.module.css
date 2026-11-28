@@ -13,6 +13,16 @@
   touch-action: none;
 }
 
+/* KioskCanvas: the topic screen scaled into a box (the business portal's live preview). */
+.canvas {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #131826;
+  user-select: none;
+}
+
 .stage {
   flex: none;
   width: 1280px;

@@ -9,6 +9,7 @@ import { EMPTY_PART_TEXT, type PartText } from "@/lib/gestureText";
 import { MAX_ROWS, publishDemo, publishModelFile, savePreviewDemo, shrinkImage, type PublishedDemo } from "@/lib/published";
 import { authHeader, supabase, supabaseEnabled, UPLOADS } from "@/lib/supabase";
 import { AccountMenu, BoothsAndLeads, KioskIcon, SignIn, useAccount } from "./Account";
+import KioskCanvas, { type KioskAction } from "../kiosk/KioskCanvas";
 import styles from "./business.module.css";
 
 // Business portal: exhibitors set up their kiosk demo. Two ways in:
@@ -53,6 +54,10 @@ type Screen =
 
 const STAGE_W = 1280;
 const STAGE_H = 720;
+// Live kiosk preview widths on the 1280×720 artboard (the kiosk keeps its 16:9 shape).
+const LIVE_W = 416; // Review
+const MANUAL_LIVE_W = 524; // Manual
+const LARGE_W = 1056; // Enlarge
 const STORAGE_KEY = "playform.business.draft.v2"; // v2: starts empty (v1 drafts held sample content)
 
 // Nothing is filled in until the exhibitor uploads, types or asks the AI: every section starts empty.
@@ -89,6 +94,20 @@ const defaultConfig: BusinessConfig = {
   notes: {},
   sectionFiles: {},
 };
+
+/** What the kiosk shows from a draft. Shared by the live preview, Try it and Publish, so they always match. */
+const draftContent = (config: BusinessConfig) => ({
+  productName: config.productName,
+  sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows: rows.slice(0, MAX_ROWS) })),
+  mappings: config.mappings,
+  gestureText: {
+    whole: config.partText?.["Whole product"]?.hover ?? "",
+    parts: Object.fromEntries(Object.entries(config.partText ?? {}).filter(([k]) => k !== "Whole product")),
+  },
+});
+
+/** Publishing from a Vercel preview link would change the live kiosk (they share storage), so it is turned off there. */
+const PREVIEW_DEPLOYMENT = process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
 
 // ---- Icons -------------------------------------------------------------------
 const Check = ({ size = 18, color = "#1B2036" }: { size?: number; color?: string }) => (
@@ -346,19 +365,6 @@ function Modal({ title, children, onClose, actions }: { title: string; children:
   );
 }
 
-/** A section in full, for the modal. */
-function SectionFull({ section }: { section: Section }) {
-  return (
-    <div className={styles.fullSection}>
-      <p className={styles.fullTitle}>{section.title}</p>
-      {section.rows.map((r, i) => (
-        <div key={i} className={styles.fullRow}><b>{r.a || "—"}</b>{r.b && <span>{r.b}</span>}</div>
-      ))}
-      {section.needsReview && section.reviewNote && <p className={styles.fullNote}>Needs attention: {section.reviewNote}</p>}
-    </div>
-  );
-}
-
 // ---- Page --------------------------------------------------------------------------
 export default function BusinessPage() {
   const [config, setConfig] = useState<BusinessConfig>(defaultConfig);
@@ -379,6 +385,9 @@ export default function BusinessPage() {
   const [cellLayer, setCellLayer] = useState<HTMLDivElement | null>(null); // where open text cells are drawn
   const [sectionDocs, setSectionDocs] = useState<Record<string, File>>({}); // manual: the file attached to each section
   const [formatting, setFormatting] = useState<string | null>(null); // manual: section the AI is formatting
+  // Live kiosk preview: the uploaded model's file for its 3D view, and whether the preview is shown large.
+  const [liveModelFile, setLiveModelFile] = useState<{ name: string; data: ArrayBuffer } | null>(null);
+  const [enlarged, setEnlarged] = useState<string | null>(null); // the topic shown in the large preview
   // Signed-in business (Supabase): the draft and uploaded files follow the account, not just this browser.
   const { user, ready } = useAccount();
   const userId = user?.id ?? null;
@@ -500,6 +509,24 @@ export default function BusinessPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the signed-in account changes
   }, [ready, userId]);
 
+  // The live preview's 3D view needs the model file itself (kept in this browser), not just its pictures.
+  useEffect(() => {
+    if (!model) return;
+    let cancelled = false;
+    loadFile("model")
+      .then((f) => { if (!cancelled && f && f.name === model.fileName) setLiveModelFile({ name: f.name, data: f.data }); })
+      .catch(() => { /* the preview shows the model's pictures instead */ });
+    return () => { cancelled = true; };
+  }, [model]);
+
+  // Escape closes the large preview.
+  useEffect(() => {
+    if (!enlarged) return;
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setEnlarged(null); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [enlarged]);
+
   // Fit the 1280×720 artboard to any window.
   useEffect(() => {
     const fit = () => setScale(Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H));
@@ -558,6 +585,7 @@ export default function BusinessPage() {
       );
       save({ ...config, modelName: file.name, mappings });
       setNotice(`Found ${names.length} part${names.length === 1 ? "" : "s"} in ${file.name}${loaded.truncated ? " (showing the 24 largest)" : ""}.`);
+      setLiveModelFile({ name: file.name, data });
       try { await saveFile("model", { name: file.name, type: file.type, data }); } catch { /* kept until refresh */ }
       await uploadToAccount("model", { name: file.name, type: file.type, data });
     } catch (e) {
@@ -708,6 +736,36 @@ export default function BusinessPage() {
     setScreen(m === "auto" ? { name: "a-upload" } : { name: "m-model" });
   };
   const go = (s: Screen) => { setEditingPreview(false); setScreen(s); };
+
+  // ---- Live kiosk preview: the visitor kiosk's own topic screen, drawn from this draft as it is edited ----
+  const liveFile = model && liveModelFile?.name === model.fileName ? liveModelFile : null;
+  const liveDemo: PublishedDemo = {
+    version: 1,
+    preview: true,
+    publishedAt: "",
+    ...draftContent(config),
+    model: model
+      ? {
+          fileName: model.fileName,
+          whole: model.whole,
+          parts: Object.fromEntries(model.parts.map((p) => [p.name, p.context])),
+          partNames: model.parts.map((p) => p.name),
+          file: liveFile ? { name: liveFile.name } : undefined,
+        }
+      : undefined,
+  };
+  // Clicking a topic on the preview opens that section in the editor.
+  const editTopic = (id: string) => {
+    if (screen.name === "m-section") {
+      const i = config.sections.findIndex((x) => x.id === id);
+      if (i >= 0) go({ name: "m-section", index: i });
+    } else go({ name: "a-edit", id });
+  };
+  const ACTION_SCREENS: Record<KioskAction, string> = { team: "Talk to our team", brochure: "Get digital brochure", contact: "Give us your contact" };
+  const onPreviewAction = (a: KioskAction) => setNotice(`On the kiosk this opens ${ACTION_SCREENS[a]}. Press Try it to go through it.`);
+  const livePreview = (topicId: string, width: number, onPick: (id: string) => void) => (
+    <KioskCanvas demo={liveDemo} modelFile={liveFile} topicId={topicId} width={width} onPickTopic={onPick} onAction={onPreviewAction} />
+  );
   // Publish: the kiosk shows these sections, gestures and model pictures from now on.
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<{ server: boolean; note?: string; at: string; booths?: boolean } | null>(null);
@@ -732,17 +790,12 @@ export default function BusinessPage() {
       version: 1,
       preview: preview || undefined,
       publishedAt: new Date().toISOString(),
-      productName: config.productName,
-      sections: config.sections.map(({ id, title, rows }) => ({ id, title, rows: rows.slice(0, MAX_ROWS) })),
-      mappings: config.mappings,
-      gestureText: {
-        whole: config.partText?.["Whole product"]?.hover ?? "",
-        parts: Object.fromEntries(Object.entries(config.partText ?? {}).filter(([k]) => k !== "Whole product")),
-      },
+      ...draftContent(config),
       model: pictures,
     };
   };
   const finish = async () => {
+    if (PREVIEW_DEPLOYMENT) { setNotice("Publishing is off on preview links so the live kiosk can't change. Use Try it to test."); return; }
     const empty = config.sections.filter((x) => sectionStatus(x) === "insufficient");
     if (empty.length) { setNotice(`Fill in ${empty.map((x) => x.label).join(", ")} before publishing.`); return; }
     setPublishing(true);
@@ -890,7 +943,7 @@ export default function BusinessPage() {
       <>
         <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}. Open any section to edit it.` : config.sections.some((x) => x.title.trim() || x.rows.length) ? "Write each section, or build them from a product doc." : "Nothing is filled in yet. Write each section, or build them from a product doc."}</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
-        <nav className={styles.sideNav} aria-label="Sections">
+        <nav className={`${styles.sideNav} ${styles.sideNavLive}`} aria-label="Sections">
           {config.sections.map((x) => {
             const st = sectionStatus(x);
             return (
@@ -903,7 +956,7 @@ export default function BusinessPage() {
             Interactions<StatusIcon status={gestureStatus} label={STATUS_TEXT[gestureStatus]} />
           </button>
         </nav>
-        <div className={`${styles.card} ${styles.editCard}`}>
+        <div className={`${styles.card} ${styles.editCard} ${styles.editCardLive}`}>
           <div className={styles.editHead}>
             <h2>{s.label.toUpperCase()}</h2>
             <StatusLabel status={status} />
@@ -934,18 +987,20 @@ export default function BusinessPage() {
             </div>
           )}
         </div>
-        <div className={`${styles.card} ${styles.quoteCard}`}>
+        <div className={`${styles.card} ${styles.quoteCard} ${styles.quoteCardLive}`}>
           <div className={`${styles.kicker} ${styles.oneLine}`} title={s.source}>FROM YOUR DOCUMENT{s.quote && s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""}</div>
           <Clamp className={styles.fill} title={`From your document${s.source ? ` · ${s.source}` : ""}`}>
             {s.quote ? <blockquote className={styles.quote}>“{s.quote}”</blockquote> : <p className={styles.emptyNote}>Nothing yet. When the AI builds this section, the passage it used shows here.</p>}
             {s.needsReview && s.reviewNote && <span className={styles.lookNoteSmall}>Needs attention: {s.reviewNote}</span>}
           </Clamp>
         </div>
-        <div className={`${styles.card} ${styles.kioskCard}`}>
-          <div className={styles.kicker} style={{ color: "#c8d8ff" }}>ON THE KIOSK</div>
-          <Clamp className={styles.fill} title={`On the kiosk · ${s.label}`} full={<SectionFull section={s} />}>
-            <KioskPreview section={s} small />
-          </Clamp>
+        <div className={`${styles.card} ${styles.liveCard}`}>
+          <div className={styles.liveHead}>
+            <span className={styles.kicker} style={{ color: "#c8d8ff" }}>LIVE ON THE KIOSK</span>
+            <button type="button" className={styles.smallPill} onClick={() => setEnlarged(s.id)}>ENLARGE</button>
+          </div>
+          {enlarged ? <div style={{ height: (LIVE_W * STAGE_H) / STAGE_W }} /> : livePreview(s.id, LIVE_W, editTopic)}
+          <p className={styles.liveNote}>Changes show as you type · click a topic to edit it · not published</p>
         </div>
         <Foot back={{ label: "BACK", onClick: () => go({ name: "a-upload" }) }} next={<>
           <button type="button" className={styles.outlineBtn} onClick={() => go({ name: "i-list" })}>CHECK GESTURES <Arrow /></button>
@@ -1025,8 +1080,9 @@ export default function BusinessPage() {
         </div>
         <div className={`${styles.card} ${styles.manualRight} ${styles.previewCard}`} data-editing={editingPreview ? "" : undefined}>
           <div className={styles.previewHead}>
-            <span className={styles.previewTitle}>AI PREVIEW · KIOSK PANEL</span>
+            <span className={styles.previewTitle}>AI PREVIEW · LIVE ON THE KIOSK</span>
             <span className={styles.previewBtns}>
+              <button type="button" className={styles.smallPill} onClick={() => setEnlarged(s.id)}>ENLARGE</button>
               <button type="button" className={styles.smallPill} disabled={!hasInput || busy} title={hasInput ? "Ask the AI to write it again" : "Type, paste or attach something first"} onClick={() => formatSection(s.id)}>REGENERATE</button>
               <button type="button" className={styles.smallPill} aria-pressed={editingPreview} onClick={() => setEditingPreview((v) => !v)}>{editingPreview ? "DONE" : "EDIT"}</button>
             </span>
@@ -1045,9 +1101,7 @@ export default function BusinessPage() {
           ) : !s.title.trim() && s.rows.length === 0 ? (
             <p className={styles.emptyPreview}>Nothing to preview yet. Type, paste or attach on the left and press Submit, or press Edit to write it yourself.</p>
           ) : (
-            <Clamp scroll className={styles.fill} title={`AI preview · ${s.label}`} full={<SectionFull section={s} />}>
-              <KioskPreview flat section={{ ...s, label: `${String(screen.index + 1).padStart(2, "0")} · ${s.label}` }} />
-            </Clamp>
+            enlarged ? null : livePreview(s.id, MANUAL_LIVE_W, editTopic)
           )}
           {busy && (
             <div className={styles.previewBusy} role="status">
@@ -1183,6 +1237,15 @@ export default function BusinessPage() {
         <div ref={setCellLayer} className={styles.cellLayer} />
         {notice && <div role="status" className={styles.toast}>{notice}</div>}
         {more && <Modal title={more.title} onClose={() => setMore(null)}>{more.content}</Modal>}
+        {enlarged && (
+          <div className={styles.liveLarge} role="dialog" aria-modal="true" aria-label="Kiosk preview">
+            <div className={styles.liveLargeHead}>
+              <span className={styles.kicker} style={{ color: "#c8d8ff" }}>LIVE ON THE KIOSK · NOT PUBLISHED · CLICK A TOPIC TO SWITCH</span>
+              <button type="button" className={styles.smallPill} autoFocus onClick={() => setEnlarged(null)}>CLOSE</button>
+            </div>
+            {livePreview(enlarged, LARGE_W, (id) => { setEnlarged(id); editTopic(id); })}
+          </div>
+        )}
         {published && (
           <Modal
             title="Published to the kiosk"
@@ -1219,19 +1282,6 @@ export default function BusinessPage() {
     </main>
     </CellLayer.Provider>
     </MoreContext.Provider>
-  );
-}
-
-// What visitors will see for a section, in the kiosk's panel style.
-function KioskPreview({ section, small, flat }: { section: Section; small?: boolean; flat?: boolean }) {
-  return (
-    <div className={`${styles.kioskPreview} ${small ? styles.kioskPreviewSmall : ""} ${flat ? styles.kioskPreviewFlat : ""}`}>
-      <div className={styles.kioskKicker}>{section.label.toUpperCase()}</div>
-      <div className={styles.kioskTitle} data-empty={section.title ? undefined : ""}>{section.title || "No headline yet"}</div>
-      {section.rows.map((r, i) => (
-        <div key={i} className={styles.kioskRow}><span>{r.a || "—"}</span>{r.b && <small>{r.b}</small>}</div>
-      ))}
-    </div>
   );
 }
 

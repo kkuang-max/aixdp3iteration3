@@ -2348,3 +2348,72 @@
   text-align: center;
 }
 
+
+/* ---- Live kiosk preview (Review and Manual) ------------------------------------------------
+   The visitor kiosk's own topic screen, drawn from the draft (app/kiosk/KioskCanvas.tsx). On Review it takes the right
+   column, so the section list and editor move left to make room. */
+.sideNavLive {
+  width: 164px;
+}
+
+.editCardLive {
+  left: 264px;
+  width: 440px;
+}
+
+.editCardLive .editRow {
+  grid-template-columns: 128px 1fr 28px;
+}
+
+.liveCard {
+  position: absolute;
+  left: 722px;
+  top: 151px;
+  width: 446px;
+  padding: 14px;
+  border-radius: 24px;
+  background: #1b2036;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.liveHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.liveNote {
+  margin: 0;
+  font-size: 12px;
+  color: #8e94a8;
+}
+
+.quoteCardLive {
+  left: 722px;
+  top: 489px;
+  width: 446px;
+  height: 113px;
+  padding: 14px 20px;
+}
+
+/* Enlarge: the preview nearly full size, over the portal. Under the toast, so its notes still show. */
+.liveLarge {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  background: rgba(12, 15, 28, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.liveLargeHead {
+  width: 1056px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
