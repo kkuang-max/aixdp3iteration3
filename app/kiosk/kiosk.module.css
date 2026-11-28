@@ -499,45 +499,50 @@ video.camVideo {
   animation: rise 450ms ease-out both;
 }
 
-/* A view's pages (Overview: What it is · Why it's different · Where it's used; Explore the parts: Parts · Specs).
-   They turn like cards: a hand held over a name, a tap, or a swipe left / right. */
+/* The current choice's pages, listed under the two choices (Overview: What it is · Why it's different · Where it's
+   used; Explore the parts: Parts · Specs). They turn like cards: a hand held over a name, a tap, or a swipe. */
 .pages {
+  margin: 10px 0 0 76px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .page {
   position: relative;
-  min-height: 40px;
+  min-height: 46px;
   padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 12px 12px 0;
   background: transparent;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: left;
   color: #a9b0c3;
   cursor: pointer;
   transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
 }
 
 .page[data-current] {
-  border-color: rgba(191, 216, 255, 0.55);
-  background: rgba(191, 216, 255, 0.12);
+  border-left-color: #bfd8ff;
+  background: rgba(191, 216, 255, 0.08);
   color: #ffffff;
 }
 
 .page[data-dwelling] {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
   color: #ffffff;
 }
 
 .page .dwellBar {
   left: 14px;
   right: 14px;
-  bottom: 5px;
+  bottom: 6px;
 }
 
 .pageBody {

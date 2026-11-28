@@ -2351,52 +2351,70 @@
 
 /* ---- Review: the visitor kiosk, drawn from the draft, filling the screen ------------------------------------
    Its text is edited in place (app/kiosk/KioskCanvas.tsx with `edit`). Above it, what the shown topic still needs. */
-.reviewBar {
+/* Left sidebar beside the kiosk: back, the page's status in full, the AI tools, Check gestures at the bottom. */
+.reviewRail {
   position: absolute;
-  left: 120px;
-  top: 58px;
-  width: 1040px;
-  height: 38px;
+  left: 56px;
+  top: 70px;
+  width: 168px;
+  height: 562px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .reviewStatus {
-  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.railLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: #c8d8ff;
 }
 
 .reviewNote {
-  min-width: 0;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  margin: 0;
   font-size: 13px;
-  line-height: 1.35;
+  line-height: 1.45;
   color: #c9cfdd;
 }
 
 .reviewTools {
-  flex: none;
   display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
 .reviewTools > button {
-  height: 34px;
-  padding: 0 14px;
+  height: auto;
+  min-height: 36px;
+  padding: 8px 12px;
   font-size: 11px !important;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.reviewRail .gestureGlow {
+  margin-top: auto;
+  justify-content: center;
+  height: auto;
+  min-height: 40px;
+  padding: 6px 10px;
+  gap: 6px;
+  letter-spacing: 0.08em;
+  white-space: normal;
 }
 
 .reviewBack {
   flex: none;
+  align-self: flex-start;
   height: 34px;
-  padding: 0 12px 0 4px;
+  padding: 0 12px 0 0;
   border: none;
   background: none;
   display: inline-flex;
@@ -2448,8 +2466,8 @@
 
 .reviewCanvas {
   position: absolute;
-  left: 120px;
-  top: 104px;
+  left: 240px;
+  top: 70px;
   border-radius: 12px;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 18px 50px rgba(0, 0, 0, 0.35);
 }

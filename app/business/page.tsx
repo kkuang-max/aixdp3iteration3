@@ -56,7 +56,7 @@ type Screen =
 const STAGE_W = 1280;
 const STAGE_H = 720;
 // Live kiosk preview widths on the 1280×720 artboard (the kiosk keeps its 16:9 shape).
-const REVIEW_W = 1040; // Review: the kiosk fills the screen below the top bar
+const REVIEW_W = 1000; // Review: the kiosk fills the screen beside the left sidebar
 const MANUAL_LIVE_W = 524; // Manual
 const LARGE_W = 1056; // Enlarge
 const STORAGE_KEY = "playform.business.draft.v2"; // v2: starts empty (v1 drafts held sample content)
@@ -940,12 +940,13 @@ export default function BusinessPage() {
     };
     body = (
       <>
-        {/* What this topic still needs, the AI tools for it, and on to the gestures. */}
-        <div className={styles.reviewBar}>
+        {/* Left sidebar: back, what this page still needs, the AI tools for it, and on to the gestures. */}
+        <aside className={styles.reviewRail} aria-label={`${PAGE_LABEL[s.id] ?? s.label}: status and tools`}>
+          <button type="button" className={styles.reviewBack} onClick={() => go({ name: "a-upload" })} title="Back to the uploads"><Arrow dir="left" /> BACK</button>
           <div className={styles.reviewStatus}>
-            <button type="button" className={styles.reviewBack} onClick={() => go({ name: "a-upload" })} title="Back to the uploads"><Arrow dir="left" /> BACK</button>
+            <span className={styles.railLabel}>{(PAGE_LABEL[s.id] ?? s.label).toUpperCase()}</span>
             <StatusLabel status={status} />
-            <span className={styles.reviewNote} title={statusNote(s)}>{statusNote(s)}</span>
+            <p className={styles.reviewNote}>{statusNote(s)}</p>
           </div>
           <div className={styles.reviewTools}>
             <button type="button" className={styles.outlineSmall} disabled={!docFile || busy} title={docFile ? `Write ${s.label} again from ${docFile.name}` : "Upload a product doc to regenerate with AI"} onClick={() => regenerateFromDoc(s.id)}>{busy ? "REGENERATING…" : "REGENERATE WITH AI"}</button>
@@ -953,16 +954,16 @@ export default function BusinessPage() {
               type="button"
               className={styles.outlineSmall}
               disabled={!s.quote}
-              title={s.quote ? "The passage of your document this topic came from" : "No source passage yet: it shows once the AI builds this topic"}
+              title={s.quote ? "The passage of your document this page came from" : "No source passage yet: it shows once the AI builds this page"}
               onClick={() => setMore({ title: `From your document${s.source ? ` · ${s.source}` : ""}`, content: <blockquote className={styles.quote}>“{s.quote}”</blockquote> })}
             >
               SOURCE{s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""}
             </button>
-            <button type="button" className={styles.gestureGlow} title={`Interactions: ${STATUS_TEXT[gestureStatus]}`} onClick={() => go({ name: "i-list" })}>
-              <StatusIcon status={gestureStatus} label={`Interactions: ${STATUS_TEXT[gestureStatus]}`} /> CHECK GESTURES <Arrow />
-            </button>
           </div>
-        </div>
+          <button type="button" className={styles.gestureGlow} title={`Interactions: ${STATUS_TEXT[gestureStatus]}`} onClick={() => go({ name: "i-list" })}>
+            <StatusIcon status={gestureStatus} label={`Interactions: ${STATUS_TEXT[gestureStatus]}`} /> CHECK GESTURES <Arrow />
+          </button>
+        </aside>
 
         {/* The visitor kiosk itself, drawn from this draft: click a topic to switch, click any text to edit it. */}
         <div className={styles.reviewCanvas}>

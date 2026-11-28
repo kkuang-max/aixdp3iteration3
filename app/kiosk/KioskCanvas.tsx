@@ -65,7 +65,7 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
     const stage = stageRef.current;
     if (!stage || !hasBadges) return;
     const measure = () => {
-      // The two choices (data-view) get a mark at their right end; page tabs (data-page) at their top-right corner.
+      // A mark at the right end of each choice (data-view) and each page name (data-page).
       const els = stage.querySelectorAll<HTMLElement>("[data-view], [data-page]");
       const next: Spot[] = [];
       els.forEach((b) => {
@@ -75,9 +75,7 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
           x += n.offsetLeft;
           y += n.offsetTop;
         }
-        const view = b.dataset.view;
-        if (view) next.push({ id: view, x: x + b.offsetWidth - 30, y: y + b.offsetHeight / 2 });
-        else next.push({ id: b.dataset.page ?? "", x: x + b.offsetWidth - 4, y: y + 4 });
+        next.push({ id: b.dataset.view ?? b.dataset.page ?? "", x: x + b.offsetWidth - 30, y: y + b.offsetHeight / 2 });
       });
       setSpots((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     };

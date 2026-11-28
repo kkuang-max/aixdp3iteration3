@@ -253,6 +253,29 @@ export function Hub(props: {
             </button>
           );
         })}
+        {/* The current choice's pages, turning like cards: hold a hand over one, tap it, or swipe left / right.
+            Below both choices, so those two never move. */}
+        <div className={styles.pages} role="tablist" aria-label={view.label}>
+          {view.pages.map((id) => {
+            const on = id === base.id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                className={styles.page}
+                data-page={id}
+                data-dwell={DWELL_TOPIC_MS}
+                data-current={on ? "" : undefined}
+                onClick={() => { if (!on) props.onPick(topicIndex(id)); }}
+              >
+                {PAGE_LABEL[id] ?? id}
+                <span className={styles.dwellBar} aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       {/* The model: holding over it stops it turning (and on How it works / Specs pulls the pointed part out);
@@ -288,28 +311,7 @@ export function Hub(props: {
       </section>
       ) : (
       <section key={view.id} className={styles.panel} aria-live="polite">
-        {/* The view's pages, turning like cards: hold a hand over one, tap it, or swipe left / right. */}
-        <div className={styles.pages} role="tablist" aria-label={view.label}>
-          {view.pages.map((id) => {
-            const on = id === base.id;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                className={styles.page}
-                data-page={id}
-                data-dwell={DWELL_TOPIC_MS}
-                data-current={on ? "" : undefined}
-                onClick={() => { if (!on) props.onPick(topicIndex(id)); }}
-              >
-                {PAGE_LABEL[id] ?? id}
-                <span className={styles.dwellBar} aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
+        <span className={styles.panelKicker}>{(PAGE_LABEL[t.id] ?? t.label).toUpperCase()}</span>
         <div key={t.id} className={styles.pageBody}>
         {edit ? (
           <EditText className={styles.panelTitle} value={t.title} placeholder="Write a headline" label="Headline" onChange={edit.onTitle} />
