@@ -2353,9 +2353,9 @@
    Its text is edited in place (app/kiosk/KioskCanvas.tsx with `edit`). Above it, what the shown topic still needs. */
 .reviewBar {
   position: absolute;
-  left: 192px;
+  left: 120px;
   top: 58px;
-  width: 896px;
+  width: 1040px;
   height: 38px;
   display: flex;
   align-items: center;
@@ -2393,9 +2393,62 @@
   font-size: 11px !important;
 }
 
+.reviewBack {
+  flex: none;
+  height: 34px;
+  padding: 0 12px 0 4px;
+  border: none;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: #c9cfdd !important;
+}
+
+.reviewBack:hover {
+  color: #ffffff !important;
+}
+
+/* Check gestures: the next step, so it glows a little. */
+.gestureGlow {
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid #c8d8ff;
+  border-radius: 999px;
+  background: rgba(200, 216, 255, 0.1);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  color: #eef1f8 !important;
+  animation: gesture-glow 2.4s ease-in-out infinite;
+}
+
+.gestureGlow:hover {
+  background: rgba(200, 216, 255, 0.18);
+}
+
+@keyframes gesture-glow {
+  0%, 100% { box-shadow: 0 0 6px rgba(191, 216, 255, 0.25); }
+  50% { box-shadow: 0 0 16px rgba(191, 216, 255, 0.6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gestureGlow {
+    animation: none;
+    box-shadow: 0 0 10px rgba(191, 216, 255, 0.4);
+  }
+}
+
 .reviewCanvas {
   position: absolute;
-  left: 192px;
+  left: 120px;
   top: 104px;
   border-radius: 12px;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 18px 50px rgba(0, 0, 0, 0.35);

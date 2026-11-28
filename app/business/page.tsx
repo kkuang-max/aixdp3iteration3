@@ -56,7 +56,7 @@ type Screen =
 const STAGE_W = 1280;
 const STAGE_H = 720;
 // Live kiosk preview widths on the 1280×720 artboard (the kiosk keeps its 16:9 shape).
-const REVIEW_W = 896; // Review: the kiosk fills the screen between the top bar and the footer
+const REVIEW_W = 1040; // Review: the kiosk fills the screen below the top bar
 const MANUAL_LIVE_W = 524; // Manual
 const LARGE_W = 1056; // Enlarge
 const STORAGE_KEY = "playform.business.draft.v2"; // v2: starts empty (v1 drafts held sample content)
@@ -922,7 +922,6 @@ export default function BusinessPage() {
     const status = sectionStatus(s);
     const busy = formatting === s.id;
     const gestureStatus: Status = interactionStatus();
-    const next = config.sections[at + 1];
     // Typing on the kiosk preview edits this topic.
     const edit: HubEdit = {
       maxRows: MAX_ROWS,
@@ -933,9 +932,10 @@ export default function BusinessPage() {
     };
     body = (
       <>
-        {/* What this topic still needs, and the AI tools for it. */}
+        {/* What this topic still needs, the AI tools for it, and on to the gestures. */}
         <div className={styles.reviewBar}>
           <div className={styles.reviewStatus}>
+            <button type="button" className={styles.reviewBack} onClick={() => go({ name: "a-upload" })} title="Back to the uploads"><Arrow dir="left" /> BACK</button>
             <StatusLabel status={status} />
             <span className={styles.reviewNote} title={statusNote(s)}>{statusNote(s)}</span>
           </div>
@@ -949,6 +949,9 @@ export default function BusinessPage() {
               onClick={() => setMore({ title: `From your document${s.source ? ` · ${s.source}` : ""}`, content: <blockquote className={styles.quote}>“{s.quote}”</blockquote> })}
             >
               SOURCE{s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""}
+            </button>
+            <button type="button" className={styles.gestureGlow} title={`Interactions: ${STATUS_TEXT[gestureStatus]}`} onClick={() => go({ name: "i-list" })}>
+              <StatusIcon status={gestureStatus} label={`Interactions: ${STATUS_TEXT[gestureStatus]}`} /> CHECK GESTURES <Arrow />
             </button>
           </div>
         </div>
@@ -964,10 +967,6 @@ export default function BusinessPage() {
             </div>
           )}
         </div>
-        <Foot back={{ label: "BACK", onClick: () => go({ name: "a-upload" }) }} next={<>
-          {next && <button type="button" className={styles.outlineBtnDim} onClick={() => go({ name: "a-edit", id: next.id })}>NEXT: {next.label.toUpperCase()}</button>}
-          <button type="button" className={styles.outlineBtn} title={`Interactions: ${STATUS_TEXT[gestureStatus]}`} onClick={() => go({ name: "i-list" })}><StatusIcon status={gestureStatus} label={`Interactions: ${STATUS_TEXT[gestureStatus]}`} /> CHECK GESTURES <Arrow /></button>
-        </>} />
       </>
     );
   }
