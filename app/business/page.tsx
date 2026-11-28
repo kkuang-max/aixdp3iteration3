@@ -55,7 +55,7 @@ type Screen =
 const STAGE_W = 1280;
 const STAGE_H = 720;
 // Live kiosk preview widths on the 1280×720 artboard (the kiosk keeps its 16:9 shape).
-const LIVE_W = 416; // Review
+const LIVE_W = 552; // Review
 const MANUAL_LIVE_W = 524; // Manual
 const LARGE_W = 1056; // Enlarge
 const STORAGE_KEY = "playform.business.draft.v2"; // v2: starts empty (v1 drafts held sample content)
@@ -180,6 +180,23 @@ const WIDEN = 120; // a short cell (a part name) opens this much wider so it can
 const ExpandIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
 );
+
+/** A text box that grows with its text, so nothing is cut off. Kiosk copy is one paragraph: Enter doesn't add a line. */
+function Field({ value, onChange, label, placeholder, bold, id }: { value: string; onChange: (v: string) => void; label: string; placeholder?: string; bold?: boolean; id?: string }) {
+  return (
+    <textarea
+      id={id}
+      className={styles.field}
+      data-bold={bold ? "" : undefined}
+      aria-label={label}
+      placeholder={placeholder}
+      rows={1}
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/\n/g, " "))}
+      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+    />
+  );
+}
 
 function Cell({ value, onChange, label, placeholder, widen, bold, span }: {
   value: string;
@@ -310,40 +327,6 @@ function StatusLabel({ status }: { status: Status }) {
 // ---- Overflow: "Show all" opens the full text in a modal ------------------------------------
 type MoreItem = { title: string; content: ReactNode };
 const MoreContext = createContext<(item: MoreItem) => void>(() => {});
-
-/** Shows as much as fits; when the content is taller than the box it fades out and offers "Show all".
- *  With `scroll`, the box also scrolls, and the fade goes away once the end is in view. */
-function Clamp({ title, children, full, className, scroll }: { title: string; children: ReactNode; full?: ReactNode; className?: string; scroll?: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [over, setOver] = useState(false);
-  const [atEnd, setAtEnd] = useState(false);
-  const openMore = useContext(MoreContext);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setOver(el.scrollHeight > el.clientHeight + 2);
-      setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
-    });
-    ro.observe(el);
-    Array.from(el.children).forEach((c) => ro.observe(c));
-    return () => ro.disconnect();
-  });
-  const onScroll = () => {
-    const el = ref.current;
-    if (el) setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
-  };
-  return (
-    <div className={`${styles.clamp} ${className ?? ""}`} data-over={over && !(scroll && atEnd) ? "" : undefined}>
-      <div ref={ref} className={styles.clampInner} data-scroll={scroll ? "" : undefined} onScroll={scroll ? onScroll : undefined} tabIndex={scroll && over ? 0 : undefined}>{children}</div>
-      {over && (
-        <button type="button" className={styles.moreBtn} onClick={() => openMore({ title, content: full ?? children })}>
-          Show all
-        </button>
-      )}
-    </div>
-  );
-}
 
 function Modal({ title, children, onClose, actions }: { title: string; children: ReactNode; onClose: () => void; actions?: ReactNode }) {
   useEffect(() => {
@@ -943,7 +926,9 @@ export default function BusinessPage() {
       <>
         <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}. Open any section to edit it.` : config.sections.some((x) => x.title.trim() || x.rows.length) ? "Write each section, or build them from a product doc." : "Nothing is filled in yet. Write each section, or build them from a product doc."}</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
-        <nav className={`${styles.sideNav} ${styles.sideNavLive}`} aria-label="Sections">
+        {/* Left: the topics, in the order visitors see them, each with what it still needs. */}
+        <nav className={`${styles.sideNav} ${styles.sideNavLive}`} aria-label="Topics">
+          <span className={styles.workLabel}>TOPICS</span>
           {config.sections.map((x) => {
             const st = sectionStatus(x);
             return (
@@ -952,33 +937,58 @@ export default function BusinessPage() {
               </button>
             );
           })}
+          <span className={styles.workDivider} />
           <button type="button" className={styles.sideItem} title={STATUS_TEXT[gestureStatus]} onClick={() => go({ name: "i-list" })}>
             Interactions<StatusIcon status={gestureStatus} label={STATUS_TEXT[gestureStatus]} />
           </button>
         </nav>
-        <div className={`${styles.card} ${styles.editCard} ${styles.editCardLive}`}>
-          <div className={styles.editHead}>
-            <h2>{s.label.toUpperCase()}</h2>
-            <StatusLabel status={status} />
+
+        {/* Centre: the visitor kiosk itself, drawn from this draft. */}
+        <div className={`${styles.card} ${styles.liveCard}`}>
+          <div className={styles.liveHead}>
+            <span className={styles.workLabel}>LIVE KIOSK PREVIEW</span>
+            <button type="button" className={styles.smallPill} onClick={() => setEnlarged(s.id)}>ENLARGE</button>
           </div>
-          <p className={styles.editHint}>{HINTS[s.id] ?? "Edit what the kiosk shows"}</p>
-          <div className={styles.fieldLabel}>HEADLINE</div>
-          <div className={styles.cellGrid}><Cell span label="Headline" placeholder="Write a headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} /></div>
-          <div className={styles.fieldLabel}>ROWS</div>
-          <div className={styles.editRows}>
-            {s.rows.length === 0 && <p className={styles.emptyNote}>No rows yet. Add up to {MAX_ROWS}.</p>}
+          {enlarged ? <div style={{ height: (LIVE_W * STAGE_H) / STAGE_W }} /> : livePreview(s.id, LIVE_W, editTopic)}
+          <p className={styles.liveNote}>Changes show as you type · click a topic on the kiosk to edit it · not published</p>
+        </div>
+
+        {/* Right: what this topic says. */}
+        <div className={`${styles.card} ${styles.inspector}`}>
+          <div className={styles.inspectorHead}>
+            <span className={styles.workLabel}>EDIT TOPIC</span>
+            <h2>{s.label}</h2>
+            <StatusLabel status={status} />
+            {s.needsReview && s.reviewNote && <span className={styles.lookNoteSmall}>{s.reviewNote}</span>}
+          </div>
+          <p className={styles.inspectorHint}>{HINTS[s.id] ?? "Edit what the kiosk shows"}</p>
+          <label className={styles.fieldLabel} htmlFor="headline">HEADLINE</label>
+          <Field id="headline" label="Headline" placeholder="Write a headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} />
+          <div className={styles.fieldLabel}>POINTS</div>
+          <div className={styles.pointList}>
+            {s.rows.length === 0 && <p className={styles.emptyNote}>No points yet. Add up to {MAX_ROWS}.</p>}
             {s.rows.map((r, i) => (
-              <div key={i} className={styles.editRow}>
-                <Cell widen bold label={`Row ${i + 1} name`} placeholder="Name" value={r.a} onChange={(v) => setRow(i, { a: v })} />
-                <Cell label={`Row ${i + 1} line`} placeholder="One line" value={r.b} onChange={(v) => setRow(i, { b: v })} />
-                <button type="button" className={styles.remove} aria-label={`Remove row ${i + 1}`} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: x.rows.filter((_, j) => j !== i) }))}>×</button>
+              <div key={i} className={styles.point}>
+                <div className={styles.pointFields}>
+                  <Field bold label={`Point ${i + 1}`} placeholder="Point" value={r.a} onChange={(v) => setRow(i, { a: v })} />
+                  <Field label={`Point ${i + 1} detail`} placeholder="Detail (optional)" value={r.b} onChange={(v) => setRow(i, { b: v })} />
+                </div>
+                <button type="button" className={styles.remove} aria-label={`Remove point ${i + 1}`} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: x.rows.filter((_, j) => j !== i) }))}>×</button>
               </div>
             ))}
           </div>
-          <div className={styles.editButtons}>
-            <button type="button" className={styles.dashedBtn} disabled={s.rows.length >= MAX_ROWS} title={s.rows.length >= MAX_ROWS ? `${MAX_ROWS} rows at most` : undefined} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }].slice(0, MAX_ROWS) }))}>+ ADD ROW</button>
-            <button type="button" className={styles.outlineSmall} disabled={!docFile || busy} title={docFile ? `Write this section again from ${docFile.name}` : "Upload a product doc to regenerate with AI"} onClick={() => regenerateFromDoc(s.id)}>{busy ? "REGENERATING…" : "REGENERATE"}</button>
+          <div className={styles.inspectorButtons}>
+            <button type="button" className={styles.dashedBtn} disabled={s.rows.length >= MAX_ROWS} title={s.rows.length >= MAX_ROWS ? `${MAX_ROWS} points at most: that's what fits on the kiosk` : undefined} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }].slice(0, MAX_ROWS) }))}>+ ADD POINT</button>
+            <button type="button" className={styles.outlineSmall} disabled={!docFile || busy} title={docFile ? `Write this topic again from ${docFile.name}` : "Upload a product doc to regenerate with AI"} onClick={() => regenerateFromDoc(s.id)}>{busy ? "REGENERATING…" : "REGENERATE"}</button>
           </div>
+          <button
+            type="button"
+            className={styles.sourceLink}
+            disabled={!s.quote}
+            onClick={() => setMore({ title: `From your document${s.source ? ` · ${s.source}` : ""}`, content: <blockquote className={styles.quote}>“{s.quote}”</blockquote> })}
+          >
+            {s.quote ? `FROM YOUR DOCUMENT${s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""} →` : "NO SOURCE PASSAGE YET"}
+          </button>
           {busy && (
             <div className={styles.previewBusy} role="status">
               <span className={styles.spinner} />
@@ -987,24 +997,9 @@ export default function BusinessPage() {
             </div>
           )}
         </div>
-        <div className={`${styles.card} ${styles.quoteCard} ${styles.quoteCardLive}`}>
-          <div className={`${styles.kicker} ${styles.oneLine}`} title={s.source}>FROM YOUR DOCUMENT{s.quote && s.source ? ` · ${s.source.replace("PRD ", "").toUpperCase()}` : ""}</div>
-          <Clamp className={styles.fill} title={`From your document${s.source ? ` · ${s.source}` : ""}`}>
-            {s.quote ? <blockquote className={styles.quote}>“{s.quote}”</blockquote> : <p className={styles.emptyNote}>Nothing yet. When the AI builds this section, the passage it used shows here.</p>}
-            {s.needsReview && s.reviewNote && <span className={styles.lookNoteSmall}>Needs attention: {s.reviewNote}</span>}
-          </Clamp>
-        </div>
-        <div className={`${styles.card} ${styles.liveCard}`}>
-          <div className={styles.liveHead}>
-            <span className={styles.kicker} style={{ color: "#c8d8ff" }}>LIVE ON THE KIOSK</span>
-            <button type="button" className={styles.smallPill} onClick={() => setEnlarged(s.id)}>ENLARGE</button>
-          </div>
-          {enlarged ? <div style={{ height: (LIVE_W * STAGE_H) / STAGE_W }} /> : livePreview(s.id, LIVE_W, editTopic)}
-          <p className={styles.liveNote}>Changes show as you type · click a topic to edit it · not published</p>
-        </div>
         <Foot back={{ label: "BACK", onClick: () => go({ name: "a-upload" }) }} next={<>
+          {next && <button type="button" className={styles.outlineBtnDim} onClick={() => go({ name: "a-edit", id: next.id })}>NEXT: {next.label.toUpperCase()}</button>}
           <button type="button" className={styles.outlineBtn} onClick={() => go({ name: "i-list" })}>CHECK GESTURES <Arrow /></button>
-          <button type="button" className={styles.outlineBtn} onClick={() => { setNotice(next ? `Saved. Next: ${next.label}.` : "Section saved."); if (next) go({ name: "a-edit", id: next.id }); }}>SAVE SECTION</button>
         </>} />
       </>
     );

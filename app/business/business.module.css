@@ -2349,27 +2349,36 @@
 }
 
 
-/* ---- Live kiosk preview (Review and Manual) ------------------------------------------------
-   The visitor kiosk's own topic screen, drawn from the draft (app/kiosk/KioskCanvas.tsx). On Review it takes the right
-   column, so the section list and editor move left to make room. */
+/* ---- Review: topics · live kiosk · edit topic ---------------------------------------------
+   Left, the topics with what each still needs. Centre, the visitor kiosk's own topic screen drawn from the draft
+   (app/kiosk/KioskCanvas.tsx). Right, the selected topic's text. */
+.workLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: #c8d8ff;
+}
+
 .sideNavLive {
-  width: 164px;
+  top: 151px;
+  width: 168px;
 }
 
-.editCardLive {
-  left: 264px;
-  width: 440px;
+.sideNavLive .workLabel {
+  padding: 0 14px 4px;
 }
 
-.editCardLive .editRow {
-  grid-template-columns: 128px 1fr 28px;
+.workDivider {
+  height: 1px;
+  margin: 6px 14px;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .liveCard {
   position: absolute;
-  left: 722px;
+  left: 264px;
   top: 151px;
-  width: 446px;
+  width: 582px;
   padding: 14px;
   border-radius: 24px;
   background: #1b2036;
@@ -2390,12 +2399,123 @@
   color: #8e94a8;
 }
 
-.quoteCardLive {
-  left: 722px;
-  top: 489px;
-  width: 446px;
-  height: 113px;
-  padding: 14px 20px;
+.inspector {
+  position: absolute;
+  left: 862px;
+  top: 151px;
+  width: 306px;
+  height: 451px;
+  padding: 16px 18px;
+  border-radius: 24px;
+  background: #1b2036;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspectorHead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.inspectorHead h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.inspectorHint {
+  margin: 0 0 2px;
+  font-size: 13px;
+  color: #b9c0d3;
+}
+
+/* A text box that grows with its text (nothing cut off, no pop-up needed). */
+.field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  max-height: 120px;
+  field-sizing: content;
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #eef1f8;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  resize: none;
+}
+
+.field[data-bold] {
+  font-weight: 600;
+}
+
+.field::placeholder {
+  color: #7d8398;
+}
+
+.field:focus {
+  outline: none;
+  border-color: #c8d8ff;
+  background: rgba(200, 216, 255, 0.06);
+}
+
+.pointList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.point {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pointFields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inspectorButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.inspectorButtons > button {
+  flex: 1;
+  padding: 0 10px;
+  letter-spacing: 0.1em;
+}
+
+.sourceLink {
+  padding: 2px 0 0;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 11px !important;
+  letter-spacing: 0.16em;
+  color: #c8d8ff !important;
+  cursor: pointer;
+}
+
+.sourceLink:disabled {
+  color: #6d7388 !important;
+  cursor: default;
 }
 
 /* Enlarge: the preview nearly full size, over the portal. Under the toast, so its notes still show. */
