@@ -55,7 +55,7 @@ type Screen =
 const STAGE_W = 1280;
 const STAGE_H = 720;
 // Live kiosk preview widths on the 1280×720 artboard (the kiosk keeps its 16:9 shape).
-const LIVE_W = 552; // Review
+const LIVE_W = 640; // Review
 const MANUAL_LIVE_W = 524; // Manual
 const LARGE_W = 1056; // Enlarge
 const STORAGE_KEY = "playform.business.draft.v2"; // v2: starts empty (v1 drafts held sample content)
@@ -181,20 +181,65 @@ const ExpandIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
 );
 
-/** A text box that grows with its text, so nothing is cut off. Kiosk copy is one paragraph: Enter doesn't add a line. */
-function Field({ value, onChange, label, placeholder, bold, id }: { value: string; onChange: (v: string) => void; label: string; placeholder?: string; bold?: boolean; id?: string }) {
+// ---- A topic as one text box ------------------------------------------------------------------
+// The first line is the headline. Every line after it is a point; "Point: detail" adds the smaller line under it.
+// Blank lines are ignored, so the text can be spaced out however reads best.
+type TopicContent = { title: string; rows: Row[] };
+
+function parseTopic(text: string): TopicContent & { extra: number } {
+  const [first = "", ...rest] = text.split("\n");
+  const lines = rest.map((l) => l.trim()).filter(Boolean);
+  const rows = lines.map((l) => {
+    const at = l.indexOf(":");
+    return at < 0 ? { a: l, b: "" } : { a: l.slice(0, at).trim(), b: l.slice(at + 1).trim() };
+  });
+  return { title: first.trim(), rows: rows.slice(0, MAX_ROWS), extra: Math.max(0, rows.length - MAX_ROWS) };
+}
+
+const oneLine = (v: string) => v.replace(/\s*\n\s*/g, " ").trim();
+function topicText({ title, rows }: TopicContent): string {
+  const points = rows
+    .map((r) => ({ a: oneLine(r.a), b: oneLine(r.b) }))
+    .filter((r) => r.a || r.b)
+    .slice(0, MAX_ROWS)
+    .map((r) => (r.b ? `${r.a}: ${r.b}` : r.a));
+  title = oneLine(title);
+  return points.length ? `${title}\n\n${points.join("\n")}` : title;
+}
+
+/** Edit a topic's headline and points in one box. While typing, the box keeps exactly what was typed; it only takes
+ *  new text from the topic when the topic changes some other way (another topic, or the AI writing it again). */
+function TopicText({ title, rows, onChange, id }: TopicContent & { onChange: (c: TopicContent) => void; id: string }) {
+  const current = topicText({ title, rows });
+  const [text, setText] = useState(current);
+  const [seen, setSeen] = useState(current);
+  if (current !== seen) {
+    // The topic changed. If it wasn't this box's own typing, show the new text.
+    setSeen(current);
+    if (topicText(parseTopic(text)) !== current) setText(current);
+  }
+  const parsed = parseTopic(text);
   return (
-    <textarea
-      id={id}
-      className={styles.field}
-      data-bold={bold ? "" : undefined}
-      aria-label={label}
-      placeholder={placeholder}
-      rows={1}
-      value={value}
-      onChange={(e) => onChange(e.target.value.replace(/\n/g, " "))}
-      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
-    />
+    <>
+      <textarea
+        id={id}
+        className={styles.topicText}
+        aria-describedby={`${id}-help`}
+        spellCheck
+        placeholder={"Headline on the first line\n\nA point\nA point: with a detail line"}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          const next = parseTopic(e.target.value);
+          onChange({ title: next.title, rows: next.rows });
+        }}
+      />
+      {parsed.extra > 0 && (
+        <span className={styles.lookNoteSmall}>
+          The kiosk shows {MAX_ROWS} points at most: the last {parsed.extra === 1 ? "line isn’t" : `${parsed.extra} lines aren’t`} shown.
+        </span>
+      )}
+    </>
   );
 }
 
@@ -746,8 +791,13 @@ export default function BusinessPage() {
   };
   const ACTION_SCREENS: Record<KioskAction, string> = { team: "Talk to our team", brochure: "Get digital brochure", contact: "Give us your contact" };
   const onPreviewAction = (a: KioskAction) => setNotice(`On the kiosk this opens ${ACTION_SCREENS[a]}. Press Try it to go through it.`);
+  // Each topic's status, drawn on the preview's own topic list (editor only), so the topics aren't listed twice.
+  const topicBadges = Object.fromEntries(config.sections.map((x) => {
+    const st = sectionStatus(x);
+    return [x.id, <StatusIcon key={x.id} status={st} label={`${x.label}: ${STATUS_TEXT[st]}`} />];
+  }));
   const livePreview = (topicId: string, width: number, onPick: (id: string) => void) => (
-    <KioskCanvas demo={liveDemo} modelFile={liveFile} topicId={topicId} width={width} onPickTopic={onPick} onAction={onPreviewAction} />
+    <KioskCanvas demo={liveDemo} modelFile={liveFile} topicId={topicId} width={width} onPickTopic={onPick} onAction={onPreviewAction} badges={topicBadges} />
   );
   // Publish: the kiosk shows these sections, gestures and model pictures from now on.
   const [publishing, setPublishing] = useState(false);
@@ -920,29 +970,11 @@ export default function BusinessPage() {
     const status = sectionStatus(s);
     const busy = formatting === s.id;
     const gestureStatus: Status = interactionStatus();
-    const setRow = (i: number, patch: Partial<Row>) => updateSection(s.id, (x) => ({ ...x, rows: x.rows.map((y, j) => (j === i ? { ...y, ...patch } : y)) }));
     const next = config.sections[at + 1];
     body = (
       <>
         <div className={styles.guide}><h1>REVIEW YOUR DEMO</h1><p>{config.aiBuilt ? `AI built these from ${config.documentName}. Open any section to edit it.` : config.sections.some((x) => x.title.trim() || x.rows.length) ? "Write each section, or build them from a product doc." : "Nothing is filled in yet. Write each section, or build them from a product doc."}</p></div>
         <div className={styles.stepperAt}>{stepper}</div>
-        {/* Left: the topics, in the order visitors see them, each with what it still needs. */}
-        <nav className={`${styles.sideNav} ${styles.sideNavLive}`} aria-label="Topics">
-          <span className={styles.workLabel}>TOPICS</span>
-          {config.sections.map((x) => {
-            const st = sectionStatus(x);
-            return (
-              <button key={x.id} type="button" className={styles.sideItem} aria-current={x.id === s.id ? "page" : undefined} title={STATUS_TEXT[st]} onClick={() => go({ name: "a-edit", id: x.id })}>
-                {x.label}<StatusIcon status={st} label={STATUS_TEXT[st]} />
-              </button>
-            );
-          })}
-          <span className={styles.workDivider} />
-          <button type="button" className={styles.sideItem} title={STATUS_TEXT[gestureStatus]} onClick={() => go({ name: "i-list" })}>
-            Interactions<StatusIcon status={gestureStatus} label={STATUS_TEXT[gestureStatus]} />
-          </button>
-        </nav>
-
         {/* Centre: the visitor kiosk itself, drawn from this draft. */}
         <div className={`${styles.card} ${styles.liveCard}`}>
           <div className={styles.liveHead}>
@@ -950,7 +982,7 @@ export default function BusinessPage() {
             <button type="button" className={styles.smallPill} onClick={() => setEnlarged(s.id)}>ENLARGE</button>
           </div>
           {enlarged ? <div style={{ height: (LIVE_W * STAGE_H) / STAGE_W }} /> : livePreview(s.id, LIVE_W, editTopic)}
-          <p className={styles.liveNote}>Changes show as you type · click a topic on the kiosk to edit it · not published</p>
+          <p className={styles.liveNote}>Click a topic to edit it · <StatusIcon status="good" /> ready · <StatusIcon status="attention" /> needs a look · <StatusIcon status="insufficient" /> missing · not published</p>
         </div>
 
         {/* Right: what this topic says. */}
@@ -962,25 +994,15 @@ export default function BusinessPage() {
             {s.needsReview && s.reviewNote && <span className={styles.lookNoteSmall}>{s.reviewNote}</span>}
           </div>
           <p className={styles.inspectorHint}>{HINTS[s.id] ?? "Edit what the kiosk shows"}</p>
-          <label className={styles.fieldLabel} htmlFor="headline">HEADLINE</label>
-          <Field id="headline" label="Headline" placeholder="Write a headline" value={s.title} onChange={(v) => updateSection(s.id, (x) => ({ ...x, title: v }))} />
-          <div className={styles.fieldLabel}>POINTS</div>
-          <div className={styles.pointList}>
-            {s.rows.length === 0 && <p className={styles.emptyNote}>No points yet. Add up to {MAX_ROWS}.</p>}
-            {s.rows.map((r, i) => (
-              <div key={i} className={styles.point}>
-                <div className={styles.pointFields}>
-                  <Field bold label={`Point ${i + 1}`} placeholder="Point" value={r.a} onChange={(v) => setRow(i, { a: v })} />
-                  <Field label={`Point ${i + 1} detail`} placeholder="Detail (optional)" value={r.b} onChange={(v) => setRow(i, { b: v })} />
-                </div>
-                <button type="button" className={styles.remove} aria-label={`Remove point ${i + 1}`} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: x.rows.filter((_, j) => j !== i) }))}>×</button>
-              </div>
-            ))}
-          </div>
-          <div className={styles.inspectorButtons}>
-            <button type="button" className={styles.dashedBtn} disabled={s.rows.length >= MAX_ROWS} title={s.rows.length >= MAX_ROWS ? `${MAX_ROWS} points at most: that's what fits on the kiosk` : undefined} onClick={() => updateSection(s.id, (x) => ({ ...x, rows: [...x.rows, { a: "", b: "" }].slice(0, MAX_ROWS) }))}>+ ADD POINT</button>
-            <button type="button" className={styles.outlineSmall} disabled={!docFile || busy} title={docFile ? `Write this topic again from ${docFile.name}` : "Upload a product doc to regenerate with AI"} onClick={() => regenerateFromDoc(s.id)}>{busy ? "REGENERATING…" : "REGENERATE"}</button>
-          </div>
+          <TopicText
+            key={s.id}
+            id="topic-text"
+            title={s.title}
+            rows={s.rows}
+            onChange={(c) => updateSection(s.id, (x) => ({ ...x, title: c.title, rows: c.rows }))}
+          />
+          <p id="topic-text-help" className={styles.topicHelp}>First line: the headline. Then one point per line. Add a detail line with a colon, like <b>Battery: 8 h per charge</b>.</p>
+          <button type="button" className={styles.outlineSmall} disabled={!docFile || busy} title={docFile ? `Write this topic again from ${docFile.name}` : "Upload a product doc to regenerate with AI"} onClick={() => regenerateFromDoc(s.id)}>{busy ? "REGENERATING…" : "REGENERATE WITH AI"}</button>
           <button
             type="button"
             className={styles.sourceLink}
@@ -999,7 +1021,7 @@ export default function BusinessPage() {
         </div>
         <Foot back={{ label: "BACK", onClick: () => go({ name: "a-upload" }) }} next={<>
           {next && <button type="button" className={styles.outlineBtnDim} onClick={() => go({ name: "a-edit", id: next.id })}>NEXT: {next.label.toUpperCase()}</button>}
-          <button type="button" className={styles.outlineBtn} onClick={() => go({ name: "i-list" })}>CHECK GESTURES <Arrow /></button>
+          <button type="button" className={styles.outlineBtn} title={`Interactions: ${STATUS_TEXT[gestureStatus]}`} onClick={() => go({ name: "i-list" })}><StatusIcon status={gestureStatus} label={`Interactions: ${STATUS_TEXT[gestureStatus]}`} /> CHECK GESTURES <Arrow /></button>
         </>} />
       </>
     );

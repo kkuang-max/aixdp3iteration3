@@ -7,7 +7,7 @@
 // in Kiosk.tsx), so typing in the portal never reaches it, and nothing is recorded or sent. Topics and rows respond to
 // clicks so the business can look around, the same way a visitor's touch would.
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { PART_TOPICS, TOPICS } from "@/lib/product";
 import type { PublishedDemo } from "@/lib/published";
 import type { HoldState } from "./Kiosk";
@@ -26,7 +26,10 @@ const PART_GUIDE = { title: "POINT AT A PART OR A ROW", sub: "The matching part 
 
 export type KioskAction = "team" | "brochure" | "contact";
 
-export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onAction, width, className }: {
+/** Where a topic button sits on the 1280×720 stage (stage px). */
+type Spot = { id: string; x: number; y: number };
+
+export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onAction, badges, width, className }: {
   demo: PublishedDemo;
   /** The model file for the live 3D view (pictures show without it). */
   modelFile: { name: string; data: ArrayBuffer } | null;
@@ -36,6 +39,9 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
   onPickTopic?: (id: string) => void;
   /** Talk to our team, Get digital brochure or Give us your contact was clicked. */
   onAction?: (action: KioskAction) => void;
+  /** Editor only: a mark drawn at the end of each topic button (by topic id), e.g. what that topic still needs. It is
+   *  laid over the kiosk, not part of it, so the visitor kiosk never shows it. */
+  badges?: Record<string, ReactNode>;
   /** Width on the page (px); the 1280×720 kiosk is scaled to it. */
   width: number;
   className?: string;
@@ -47,9 +53,37 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
   const [row, setRow] = useState<{ topic: string; i: number } | null>(null);
   const activeRow = row && row.topic === id ? row.i : null;
   const scale = width / STAGE_W;
+
+  // Find the topic buttons on the stage so the badges can sit on them (layout px, so the scaling doesn't matter).
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [spots, setSpots] = useState<Spot[]>([]);
+  const hasBadges = !!badges;
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !hasBadges) return;
+    const measure = () => {
+      const buttons = stage.querySelectorAll<HTMLElement>('nav[aria-label="Topics"] button');
+      const next: Spot[] = [];
+      buttons.forEach((b, i) => {
+        let x = 0;
+        let y = 0;
+        for (let n: HTMLElement | null = b; n && n !== stage; n = n.offsetParent as HTMLElement | null) {
+          x += n.offsetLeft;
+          y += n.offsetTop;
+        }
+        if (TOPICS[i]) next.push({ id: TOPICS[i].id, x: x + b.offsetWidth - 30, y: y + b.offsetHeight / 2 });
+      });
+      setSpots((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(stage);
+    return () => ro.disconnect();
+  }, [hasBadges]);
+
   return (
     <div className={`${styles.canvas} ${className ?? ""}`} style={{ width, height: STAGE_H * scale }}>
-      <div className={styles.stage} style={{ transform: `scale(${scale})`, transformOrigin: "0 0" }}>
+      <div ref={stageRef} className={styles.stage} style={{ transform: `scale(${scale})`, transformOrigin: "0 0" }}>
         <DemoContext.Provider value={demo}>
           <ModelFileContext.Provider value={modelFile}>
             <div aria-hidden="true" className={styles.frame} />
@@ -71,6 +105,9 @@ export default function KioskCanvas({ demo, modelFile, topicId, onPickTopic, onA
           </ModelFileContext.Provider>
         </DemoContext.Provider>
       </div>
+      {badges && spots.map((p) => badges[p.id] && (
+        <span key={p.id} className={styles.canvasBadge} style={{ left: p.x * scale, top: p.y * scale }}>{badges[p.id]}</span>
+      ))}
     </div>
   );
 }

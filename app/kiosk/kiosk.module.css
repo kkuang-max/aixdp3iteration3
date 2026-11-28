@@ -1535,3 +1535,11 @@ video.camVideo {
   width: 72px;
   height: 72px;
 }
+
+/* KioskCanvas badges: editor marks over the preview (never part of the visitor kiosk). Clicks pass through. */
+.canvasBadge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  pointer-events: none;
+}
